@@ -70,7 +70,7 @@ class Environment():
                     init_state += outer(x, y, z)
         
         # 2. Change of Basis.
-        raise NotImplementedError
+        # raise NotImplementedError
         return init_state
             
     def step(self,
