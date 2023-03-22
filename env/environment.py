@@ -7,13 +7,13 @@ from math import sqrt
 
 def outer(x, y, z):
     # 得到三维张量，三维分别表示xyz
-    return np.einsum('i,j,k->ijk', x, y, z)
+    return np.einsum('i,j,k->ijk', x, y, z, dtype=np.int32)
 
 class Environment():
     '''
     负责定义游戏的动作、状态以及回报
-    state: np.darray，[4, 4, 4]
-    action: np.darray，[3, 4]  (表示u, v, w)
+    state: np.darray, [4, 4, 4]
+    action: np.darray, [3, 4]  (表示u, v, w)
     results: [[s_1, a_1, pi_1, r_1], ...]
     
     包括的功能有:
@@ -32,12 +32,16 @@ class Environment():
         S_size: u, v, w的维度
         R_limit: 游戏的步数上限
         '''
+        # 参数
         self.S_size = S_size
         self.R_limit = R_limit
+        # 环境变量
         if init_state is None:
             init_state = self.get_init_state(S_size)
         self.cur_state = init_state
-        pass
+        self.accumulate_reward = 0
+        self.step_ct = 0
+        
     
     def get_init_state(self,
                        S_size):
@@ -51,12 +55,12 @@ class Environment():
         #####
         
         def one_hot(idx):
-            temp = np.zeros((S_size, ), dtype=np.uint8)
+            temp = np.zeros((S_size, ), dtype=np.int32)
             temp[idx] = 1
             return temp
         
         # 1. Get the original Matmul-Tensor.
-        init_state = np.zeros((S_size, S_size, S_size), dtype=np.uint8)
+        init_state = np.zeros((S_size, S_size, S_size), dtype=np.int32)
         n = round(sqrt(S_size))
         
         for i in range(n):                  # 用自然基的方式构建向量
@@ -76,12 +80,19 @@ class Environment():
     def step(self,
              action):
         '''
-        状态转移并返回此次操作的奖励。
-        返回: reward
+        状态转移并改动reward, 并返回是否游戏结束
         '''
         u, v, w = action
         self.cur_state -= outer(u, v, w)
-        return -1
+        self.accumulate_reward -= 1
+        self.step_ct += 1
+        # 判断是否终止
+        if self.is_terminate():
+            return True
+        if self.step_ct >= self.R_limit:
+            self.accumulate_reward += self.terminate_reward()
+            return True
+        return False
     
     def terminate_reward(self):
         '''
@@ -91,7 +102,7 @@ class Environment():
         state = self.cur_state
         terminate_reward = 0
         for z_idx in range(self.S_size):
-            terminate_reward -= np.linalg.matrix_rank(np.mat(state[..., z_idx], dtype=np.uint8))
+            terminate_reward -= np.linalg.matrix_rank(np.mat(state[..., z_idx], dtype=np.int32))
         return terminate_reward
     
     def is_terminate(self):
@@ -101,23 +112,25 @@ class Environment():
         '''
         return np.all(self.cur_state == 0)
     
-    def generate_synthetic_examples(self,
-                                    samples_n):
-        '''
-        生成人工合成的Tensor examples
-        返回: results
-        '''
-        pass
-    
     def reset(self,
               init_state=None):
         '''
         重置环境
         '''
         self.cur_state = init_state
+        self.accumulate_reward = 0
+        self.step_ct = 0
         
         
 if __name__ == '__main__':
     test_env = Environment(S_size=4,
-                           R_limit=128)
+                           R_limit=8)
+    test_action = np.array([
+        [0, 0, 1, 0],
+        [1, 1, 0, 0],
+        [0, 1, 0, 0]
+    ])
+    for _ in range(8):
+        print(test_env.step(test_action))
+        print(test_env.accumulate_reward)
     import pdb; pdb.set_trace()

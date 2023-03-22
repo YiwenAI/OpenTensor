@@ -38,6 +38,13 @@ class Trainer():
         '''
         pass
     
+    def generate_synthetic_examples(self):
+        '''
+        生成人工合成的Tensor examples
+        返回: results
+        '''
+        pass
+    
     def learn_one_episode(self,
                           example):
         '''
@@ -65,7 +72,7 @@ class Trainer():
         for iter in range(self.iters):
             # 收集数据
             self.examples.extend(self.play(self.agent))
-            # or self.examples.extend(self.env.generate_synthetic_examples())
+            # or self.examples.extend(self.generate_synthetic_examples())
             examples = self.sample_examples()
             examples = self.data_augment(examples)
 
@@ -76,13 +83,12 @@ class Trainer():
 
             # 添加logger部分
             
-    def play(self, R_limit):
+    def play(self):
         '''
-        进行一次Tensor Game，得到游玩记录
+        进行一次Tensor Game, 得到游玩记录
         返回: results
         '''
         results = []
-        step = 0
         agent = self.agent
         env = self.env
         env.reset()
@@ -91,17 +97,12 @@ class Trainer():
             
             action, actions, pi = agent.policy(env.cur_state)
             cur_state = env.cur_state.copy()
-            reward = env.step(action)                          # Will change self.cur_state.
-            step += 1
+            terminate_flag = env.step(action)                          # Will change self.cur_state.     
+            results.append([cur_state, action, pi])                    # Record. (s, a, pi).
             
-            if step >= R_limit:
-                reward += env.terminate_reward()
-                results.append([cur_state, action, pi, reward])     # Record. (s, a, pi, r).
-                break
-            
-            if env.is_terminate():
-                break
-                    
-            results.append([cur_state, action, pi, reward])     # Record. (s, a, pi, r).
+            if terminate_flag:
+                final_reward = env.accumulate_reward
+                for step in range(env.step_ct):
+                    results[step] += [final_reward + step]             # Final results. (s, a, pi, r(s)).
         
-        return results
+                return results
