@@ -118,4 +118,6 @@ class Environment():
         
         
 if __name__ == '__main__':
-    pass
+    test_env = Environment(S_size=4,
+                           R_limit=128)
+    import pdb; pdb.set_trace()

@@ -1,3 +1,19 @@
+class Torso():
+    '''
+    网络躯干(Encoder).
+    '''
+    pass
+
+class PolicyHead():
+    pass
+
+class ValueHead():
+    pass
+
+class AttentiveModes():
+    pass
+
+
 class Net():
     '''
     网络部分
