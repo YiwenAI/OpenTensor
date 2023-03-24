@@ -111,8 +111,8 @@ class Attention(nn.Module):
     def __init__(self,
                  x_channel=3,
                  y_channel=3,
-                 N_x=8,
-                 N_y=8,
+                 N_x=8,            # 2S
+                 N_y=8,            # 2S
                  causal_mask=False,
                  N_heads=16,
                  d=32,
@@ -161,20 +161,107 @@ class Attention(nn.Module):
         
         scores = torch.matmul(q_s, k_s.transpose(-1, -2)) / np.sqrt(d)    # [N_heads, N_x, N_y]
         if self.causal_mask:
-            mask = np.triu(np.ones([N_heads, N_x, N_y]), k=1)
+            mask = torch.from_numpy(np.triu(np.ones([N_heads, N_x, N_y]), k=1)).float()
             scores = scores * mask
             
         o_s = torch.matmul(scores, v_s)   # [N_heads, N_x, d]
         o_s = o_s.transpose(0, 1).contiguous().view(-1, N_heads*d)    # [N_x, N_heads*d]
         x = x + self.linear_1(o_s)                                    # [N_x, c_x]
         
-        x = x + self.linear_3(self.gelu(self.linear_2(self.final_layer_norm(x))))
+        x = x + self.linear_3(self.gelu(self.linear_2(self.final_layer_norm(x))))     # [N_x, c_x]
         
         return x
         
 
-class PolicyHead():
-    pass
+class PolicyHead(nn.Module):
+
+    def __init__(self,
+                 N_steps=2,
+                 N_logits=9,
+                 N_features=64,
+                 N_heads=32,
+                 N_layers=2,
+                 torso_feature_shape=(3*4**2, 3),
+                 mode='train'):
+        
+        super(PolicyHead, self).__init__()
+        self.N_steps = N_steps
+        self.N_logits = N_logits
+        self.N_features = N_features
+        self.N_heads = N_heads
+        self.N_layers = N_layers
+        self.torso_feature_shape = torso_feature_shape
+        self.mode = mode
+        
+        self.linear_1 = nn.Linear(N_logits, N_features * N_heads)
+        self.pos_embed = nn.Linear(1, N_features * N_heads)
+        self.self_layer_norms = [nn.LayerNorm((N_steps, N_features * N_heads)) for _ in range(N_layers)]
+        self.cross_layer_norms = [nn.LayerNorm((N_steps, N_features * N_heads)) for _ in range(N_layers)]
+        self.self_attentions = [Attention(x_channel=N_features * N_heads,
+                                          y_channel=N_features * N_heads,
+                                          N_x=N_steps,
+                                          N_y=N_steps,
+                                          causal_mask=True,
+                                          N_heads=N_heads) for _ in range(N_layers)]
+        self.cross_attentions = [Attention(x_channel=N_features * N_heads,
+                                           y_channel=torso_feature_shape[1],
+                                           N_x=N_steps,
+                                           N_y=torso_feature_shape[0],
+                                           causal_mask=False,
+                                           N_heads=N_heads) for _ in range(N_layers)]
+        self.self_dropouts = [nn.Dropout() for _ in range(N_layers)]
+        self.cross_dropouts = [nn.Dropout() for _ in range(N_layers)]
+        self.relu = nn.ReLU()
+        self.linear_2 = nn.Linear(N_features * N_heads, N_logits)
+        
+    
+    def forward(self, x):
+        
+        # Input:
+        #   [e, (g)]. e is the features extracted by torso, g is groundtruth (available in train mode)
+        #   e: [m, c]
+        #   g: {0,1,... N_logits-1} ^ N_steps0
+        
+        if self.mode == 'train':
+            e, g = x
+            o, z = self.predict_action_logits()
+    
+    
+    def set_mode(self, mode):
+        
+        assert mode in ["train", "infer"]
+        self.mode = mode
+    
+      
+    def predict_action_logits(self,
+                              a, e):
+        
+        N_steps = self.N_steps
+        N_logits = self.N_logits
+        N_features = self.N_features
+        N_heads = self.N_heads
+        N_layers = self.N_layers
+        torso_feature_shape = self.torso_feature_shape
+        
+        x = self.linear_1(a)           # [N_steps, N_features*N_heads]
+        x = self.pos_embed(torch.arange(0, N_steps).view((-1,1))) + x    # [N_steps, N_features*N_heads]
+        
+        for layer in range(N_layers):
+            x = self.self_layer_norms[layer](x)         # [N_steps, N_features*N_heads]
+            c = self.self_attentions[layer]([x,])       # [N_steps, N_features*N_heads]
+            if self.mode == 'train':
+                c = self.self_dropouts[layer](c)
+            x = x + c                                   # [N_steps, N_features*N_heads]
+            x = self.cross_layer_norms[layer](x)        # [N_steps, N_features*N_heads]
+            c = self.cross_attentions[layer]([x, e])    # [N_steps, N_features*N_heads]
+            if self.mode == 'train':
+                c = self.cross_dropouts[layer](c)
+            x = x + c                                   # [N_steps, N_features*N_heads]
+        
+        o = self.linear_2(self.relu(x))                 # [N_steps, N_logits]
+        
+        return o, x           
+    
 
 class ValueHead():
     pass
