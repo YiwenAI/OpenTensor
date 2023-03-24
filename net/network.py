@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 # Input:
@@ -176,11 +177,12 @@ class Attention(nn.Module):
 class PolicyHead(nn.Module):
 
     def __init__(self,
-                 N_steps=2,
+                 N_steps=6,        #FIXME
                  N_logits=9,
                  N_features=64,
                  N_heads=32,
                  N_layers=2,
+                 N_samples=32,
                  torso_feature_shape=(3*4**2, 3),
                  mode='train'):
         
@@ -191,6 +193,7 @@ class PolicyHead(nn.Module):
         self.N_heads = N_heads
         self.N_layers = N_layers
         self.torso_feature_shape = torso_feature_shape
+        self.N_samples = N_samples
         self.mode = mode
         
         self.linear_1 = nn.Linear(N_logits, N_features * N_heads)
@@ -220,11 +223,37 @@ class PolicyHead(nn.Module):
         # Input:
         #   [e, (g)]. e is the features extracted by torso, g is groundtruth (available in train mode)
         #   e: [m, c]
-        #   g: {0,1,... N_logits-1} ^ N_steps0
+        #   g: {0,1,... N_logits-1} ^ N_steps, [N_steps]
+        
+        N_steps = self.N_steps
+        N_logits = self.N_logits
+        N_samples = self.N_samples
+        assert self.mode in ['train', 'infer']
         
         if self.mode == 'train':
-            e, g = x
-            o, z = self.predict_action_logits()
+            e, g = x                            # g: {0,1,... N_logits-1} ^ N_steps, [N_steps]
+            g_onehot = F.one_hot(g, num_classes=N_logits).float()     # [N_steps, N_logits]
+            #FIXME: We haven't applied "shift" operation.
+            o, z = self.predict_action_logits(g_onehot, e)    # o: [N_steps, N_logits]; z: [N_steps, N_features*N_heads]
+            return o, z[0]
+        
+        elif self.mode == 'infer':
+            e = x[0]
+            a = torch.zeros((N_samples, N_steps)).long()       # a: {0,1, ... N_logits-1} ^ [N_samples, N_steps]
+            p = torch.ones((N_samples,)).float()
+            
+            for s in range(N_samples):
+                for i in range(N_steps):
+                    o, z = self.predict_action_logits(F.one_hot(a[s], num_classes=N_logits).float(), e)     #FIXME: How to represent the start action?
+                    prob = F.softmax(o[i], dim=0)
+                    sampled_a = torch.multinomial(prob, 1)
+                    _p = prob[sampled_a]
+                    p[s] = p[s] * _p
+                    a[s, i] = sampled_a
+                    if i == 0:
+                        z1 = z[0]             # [N_features*N_heads]
+                    
+            return a, p, z1                   # [N_samples, N_steps], [N_samples], [N_features*N_heads]
     
     
     def set_mode(self, mode):
@@ -244,7 +273,7 @@ class PolicyHead(nn.Module):
         torso_feature_shape = self.torso_feature_shape
         
         x = self.linear_1(a)           # [N_steps, N_features*N_heads]
-        x = self.pos_embed(torch.arange(0, N_steps).view((-1,1))) + x    # [N_steps, N_features*N_heads]
+        x = self.pos_embed(torch.arange(0, N_steps).float().view((-1,1))) + x    # [N_steps, N_features*N_heads]
         
         for layer in range(N_layers):
             x = self.self_layer_norms[layer](x)         # [N_steps, N_features*N_heads]
@@ -263,12 +292,43 @@ class PolicyHead(nn.Module):
         return o, x           
     
 
-class ValueHead():
-    pass
+class ValueHead(nn.Module):
+    
+    def __init__(self,
+                 N_layers=3,
+                 in_channel=2048,
+                 inter_channel=512,
+                 out_channel=8):
+        
+        super(ValueHead, self).__init__()
+        self.out_channel = out_channel
+        self.in_channel = in_channel
+        self.inter_channel = inter_channel
+        self.N_layers = N_layers
+        
+        self.in_linear = nn.Linear(in_channel, inter_channel)
+        self.linaers = [nn.Linear(inter_channel, inter_channel) for _ in range(N_layers-1)]
+        self.out_linear = nn.Linear(inter_channel, out_channel)
+        self.relus = [nn.ReLU() for _ in range(N_layers)]
+        
+    
+    def forward(self, x):
+        
+        # Input:
+        #   [z]. z: The feature in policy head.
+        
+        N_layers = self.N_layers
+        
+        z = x[0]
+        z = self.relus[0](self.in_linear(z))[None]
+        for layer in range(N_layers-1):
+            z = self.relus[layer+1](self.linaers[layer](z))
+            
+        q = self.out_linear(z)
+        return q[0]
+        
 
-
-
-class Net():
+class Net(nn.Module):
     '''
     网络部分
     '''
@@ -278,28 +338,73 @@ class Net():
         '''
         初始化部分
         '''
-        # e.g.:
-        # self.n_layers = n_layers
-        pass
+        
+        super(Net, self).__init__()
+        self.torso = Torso()
+        self.policy_head = PolicyHead()
+        self.value_head = ValueHead()
+        self.mode = "train"
+        
     
-    def policy_head(state, self):
-        '''
-        输出策略
-        返回: actions, pi
-        '''
-        pass
+    def forward(self, x):
+        
+        # Input:
+        #   Tensors of shape of [T,S,S,S]. First one is current tensor. (numpy)
+        #   Scalars of shape of [s,].                                   (numpy)
+        #   (Groundtruth) of shape of [N_steps, N_logits].              
+        
+        if self.mode == 'train':
+            states, scalars, g = x
+            self.policy_head.set_mode("train")
+            
+            e = self.torso([states, scalars])
+            o, z1 = self.policy_head([e, g])
+            q = self.value_head([z1])
+            
+            return o, q
+        
+        elif self.mode == 'infer':
+            states, scalars = x
+            self.policy_head.set_mode("infer")
+            
+            e = self.torso([states, scalars])
+            a, p, z1 = self.policy_head([e])
+            q = self.value_head([z1])
+            
+            return a, p, q        #FIXME: Neet to process p.
+        
     
-    def value_head(state, self):
-        '''
-        输出效用值
-        返回: reward
-        '''
-        pass
+    def set_mode(self, mode):
+        
+        assert mode in ["train", "infer"]
+        self.mode = mode
     
     
     
 if __name__ == '__main__':
-    torso = Torso()
+    # torso = Torso()
+    # test_input = [np.random.randint(-1, 1, (7, 4, 4, 4)), np.random.randint(-1, 1, (3,))]
+    # e = torso(test_input)
+    
+    # policy_head = PolicyHead()
+    # test_g = torch.tensor([0,1,2,3,4,5])
+    # train_output = policy_head([e, test_g])
+    # import pdb; pdb.set_trace()
+    
+    # value_head = ValueHead()
+    # value_output = value_head([train_output[1]])
+    # import pdb; pdb.set_trace()
+    
+    # policy_head.set_mode("infer")
+    # infer_output = policy_head([e])
+    # import pdb; pdb.set_trace()
+    
+    net = Net()
     test_input = [np.random.randint(-1, 1, (7, 4, 4, 4)), np.random.randint(-1, 1, (3,))]
-    test_output = torso(test_input)
+    test_g = torch.tensor([0,1,2,3,4,5])
+    train_output = net([*test_input, test_g])
+    import pdb; pdb.set_trace()
+    
+    net.set_mode("infer")
+    infer_output = net(test_input)
     import pdb; pdb.set_trace()

@@ -74,6 +74,7 @@ class Environment():
                     init_state += outer(x, y, z)
         
         # 2. Change of Basis.
+        #FIXME: We haven't applied "basis change" operation.
         # raise NotImplementedError
         return init_state
             
