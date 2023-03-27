@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 
 # Input:
@@ -225,6 +226,14 @@ class PolicyHead(nn.Module):
         #   e: [m, c]
         #   g: {0,1,... N_logits-1} ^ N_steps, [N_steps]
         
+        def one_hot(a_s, num_classes):
+            result = torch.zeros((a_s.shape[0], num_classes)).long()
+            for idx, a in enumerate(a_s):
+                if a == -1:
+                    continue
+                result[idx, a] = 1
+            return result
+        
         N_steps = self.N_steps
         N_logits = self.N_logits
         N_samples = self.N_samples
@@ -232,19 +241,19 @@ class PolicyHead(nn.Module):
         
         if self.mode == 'train':
             e, g = x                            # g: {0,1,... N_logits-1} ^ N_steps, [N_steps]
-            g_onehot = F.one_hot(g, num_classes=N_logits).float()     # [N_steps, N_logits]
+            g_onehot = one_hot(g, num_classes=N_logits).float()     # [N_steps, N_logits]
             #FIXME: We haven't applied "shift" operation.
             o, z = self.predict_action_logits(g_onehot, e)    # o: [N_steps, N_logits]; z: [N_steps, N_features*N_heads]
             return o, z[0]
         
         elif self.mode == 'infer':
             e = x[0]
-            a = torch.zeros((N_samples, N_steps)).long()       # a: {0,1, ... N_logits-1} ^ [N_samples, N_steps]
+            a = -torch.ones((N_samples, N_steps)).long()       # a: {-1,0,1, ... N_logits-1} ^ [N_samples, N_steps]
             p = torch.ones((N_samples,)).float()
             
             for s in range(N_samples):
                 for i in range(N_steps):
-                    o, z = self.predict_action_logits(F.one_hot(a[s], num_classes=N_logits).float(), e)     #FIXME: How to represent the start action?
+                    o, z = self.predict_action_logits(one_hot(a[s], num_classes=N_logits).float(), e)     #FIXME: How to represent the start action?
                     prob = F.softmax(o[i], dim=0)
                     sampled_a = torch.multinomial(prob, 1)
                     _p = prob[sampled_a]
@@ -334,14 +343,31 @@ class Net(nn.Module):
     '''
     
     def __init__(self,
+                 S_size=4,
+                 N_steps=6,
+                 coefficients=[0, 1, -1],
+                 N_samples=32,
                  **kwargs):
         '''
         初始化部分
         '''
         
         super(Net, self).__init__()
-        self.torso = Torso()
-        self.policy_head = PolicyHead()
+        # Parameters.
+        self.S_size = S_size
+        self.N_steps = N_steps
+        self.coefficients = coefficients
+        token_len = 3 * S_size // N_steps
+        N_logits = len(coefficients) ** token_len   # len(F) ^ len(token)
+        self.N_logits = N_logits
+        self.token_len = token_len
+        self.N_samples = N_samples
+        
+        # Network.
+        self.torso = Torso(S_size=S_size)
+        self.policy_head = PolicyHead(N_steps=N_steps,
+                                      N_logits=N_logits,
+                                      N_samples=N_samples)
         self.value_head = ValueHead()
         self.mode = "train"
         
@@ -361,7 +387,7 @@ class Net(nn.Module):
             o, z1 = self.policy_head([e, g])
             q = self.value_head([z1])
             
-            return o, q
+            return o, q          # o: [N_steps, N_logits]; q: [out_channels,]
         
         elif self.mode == 'infer':
             states, scalars = x
@@ -371,14 +397,73 @@ class Net(nn.Module):
             a, p, z1 = self.policy_head([e])
             q = self.value_head([z1])
             
-            return a, p, q        #FIXME: Neet to process p.
+            return a, p, q        #FIXME: Neet to process q.
+                                  # a: {0,1,..., N_logits-1} ^ [N_samples, N_steps]; p: [N_samples,]; q: [out_channels,]
         
     
     def set_mode(self, mode):
         
         assert mode in ["train", "infer"]
         self.mode = mode
+        
     
+    def logits_to_action(self, logits):
+        '''
+        logit: N_steps values of {0, 1, ..., N_logits - 1}.
+        e.g.: 
+            If:
+                token_len = 2
+                coefficients = [0, 1, -1]
+                N_steps = 6 
+            Then:    
+                [0, 1, 2, 3, 4, 5] -> [0 0 | 0 1 | 0 -1 | 1 0 | 1 1 | 1 -1 ]
+        '''
+        token_len = self.token_len
+        coefficients = self.coefficients
+        action = []
+        for logit in logits:                       # Get one action
+            token = []
+            for _ in range(self.token_len):        # Get one token
+                idx = logit % len(coefficients)
+                token.append(coefficients[idx])
+                logit = logit // len(coefficients)
+            token.reverse()
+            action.extend(token)
+        
+        action = np.array(action).reshape((3, -1))
+        return action
+        
+        
+    def value(self, output, u_q=.75):
+        '''
+        根据网络的输出, 得到效用值
+        output: output = net(x)
+        '''
+        q = output[-1]
+        q = q.detach().cpu().numpy()
+        out_channels = q.shape[0]
+        
+        j = math.ceil(u_q * out_channels)
+        return q[(j-1):].mean()
+    
+    
+    def policy(self, output):
+        '''
+        根据网络的输出, 得到采样的策略
+        output: output = net(x)
+        '''
+        assert len(output) == 3, "We need the output from infer mode."
+
+        a, p, _ = output
+        a, p = a.detach().cpu().numpy(), p.detach().cpu().numpy()
+        
+        actions = []
+        for logits in a:
+            actions.append(self.logits_to_action(logits))
+        actions = np.stack(actions, axis=0)
+        
+        return actions, p
+        
     
     
 if __name__ == '__main__':
@@ -407,4 +492,8 @@ if __name__ == '__main__':
     
     net.set_mode("infer")
     infer_output = net(test_input)
+    import pdb; pdb.set_trace()
+    
+    value = net.value(infer_output)
+    policy = net.policy(infer_output)
     import pdb; pdb.set_trace()
