@@ -115,7 +115,12 @@ class Node():
             self.children.append(child_node)
             
         # Backward propagate.
-        ####### We are here! #######
+        node = self
+        while node.parent is not None:
+            action_idx = node.pre_action_idx
+            node = node.parent
+            node.N[action_idx] += 1
+            node.Q[action_idx] += (value + -1 * (node.depth + 1))
     
     
     def select(self, c=.5):
@@ -123,13 +128,25 @@ class Node():
         Choose the best child.
         Return the chosen node.
         '''
-        if not self.is_leaf:
+        if self.is_leaf:
             raise Exception("Cannot choose a leaf node.")
         
         scores = [self.Q[i] + c * self.pi[i] * math.sqrt(sum(self.N)) / (1 + self.N[i])
                   for i in range(self.children_n)]
         
         return self.children[np.argmax(scores)]
+    
+    
+    def set_root(self):
+        '''
+        Set itself as a root node.
+        But not change Q, N, pi.
+        '''
+        
+        self.parent = None
+        self.pre_action = None
+        self.pre_action_idx = None
+        
     
 
 class MCTS():
@@ -138,86 +155,69 @@ class MCTS():
     '''
     
     def __init__(self,
+                 init_state,
+                 simulate_times=400,
                  **kwargs):
         '''
         超参数传递
         '''
-        # self.simu_nums = simu_nums
-        # ......
-        self.env = Environment()
-        self._init_tree()
-        pass
+        
+        self.simulate_times = simulate_times
+        self.root_node = Node(state=init_state,
+                              parent=None,
+                              pre_action=None,
+                              pre_action_idx=None)
+
     
     def __call__(self,
                  state,
                  net):
         '''
         进行一次MCTS
-        返回: action, actions, pi
+        返回: action, actions, visit_pi
         '''
-        # 初始化
-        self._init_tree(state)
-        #####
-        # MCTS搜索部分
-        # while True:
-        #     self._expand()
-        #     self._choose()
-        #     self._simulate(net)
-        #     self._propagate()
-        #####
+
+        assert is_equal(state, self.root_node.state), "State is inconsistent."
+
+        for simu in range(self.simulate_times):
+            # Select a leaf node.
+            node = self.root_node
+            while not node.is_leaf:
+                node = node.select()         #FIXME: Need to control the factor c.
+            node.expand(net)
         
-        # 搜索完毕后返回结果
-        return self.get_results()
+        actions = self.root_node.actions
+        N = self.root_node.N
+        visit_ratio = (np.array(N) / sum(N)).tolist()
+        action = actions[np.argmax(visit_ratio)]
         
-    def set_env(self, env):
-        '''
-        传入环境
-        '''
-        self.env = env
+        return action, actions, visit_ratio
         
-    def _init_tree(self):
-        '''
-        重新初始化一棵树
-        树用成员变量来表示
-        操作单位为Node
-        '''
-        pass
-    
-    def _expand(self):
-        pass
-    
-    def _choose(self):
-        pass
-    
-    def _simulate(self,
-                  net):
-        '''
-        神经网络指导模拟
-        '''
-        pass
-    
-    def _propagate(self):
-        pass
-    
-    def get_results(self):
-        '''
-        返回MCTS的结果
-        返回: action, actions, pi
-        '''
-        pass
-    
-    def copy(self):
-        '''
-        复制MCTS
-        '''
-        pass
     
     def move(self,
              action):
         '''
         MCTS向前一步
         '''
-        pass
+        assert not self.root_node.is_leaf, "Cannot move a leaf node."
+        
+        # Get the action idx.
+        action_idx = None
+        for idx, child_action in enumerate(self.root_node.actions):
+            if is_equal(child_action, action):
+                action_idx = idx
+        
+        self.root_node = self.root_node.children[action_idx]
+        self.root_node.set_root()
+        
+        
+    def reset(self,
+              state):
+        '''
+        Reset MCTS.
+        '''
+        
+        self.__init__(state)
     
     
     
@@ -245,12 +245,27 @@ if __name__ == '__main__':
         [0, 0, 0, 1]]])
     root_node = Node(state=init_state,
                      parent=None,
-                     pre_action=None)
+                     pre_action=None,
+                     pre_action_idx=None)
     
     from net import Net
     net = Net(N_samples=4)   # For debugging.
     
+    ############ Debug for Node ############
+    # import pdb; pdb.set_trace()
+    # root_node.expand(net)
+    # children_node = root_node.select()
+    # children_node.expand(net)
+    # import pdb; pdb.set_trace()
+    
+    ############ Debug for MCYS ############
+    mcts = MCTS(init_state=init_state,
+                simulate_times=20)
     import pdb; pdb.set_trace()
-    root_node.expand(net)
-    children_node = root_node.children[0]
+    action, actions, pi = mcts(init_state, net)
+    import pdb; pdb.set_trace()
+    mcts.move(action)
+    state = init_state - action2tensor(action)
+    import pdb; pdb.set_trace()
+    action, actions, pi = mcts(state, net)
     import pdb; pdb.set_trace()
