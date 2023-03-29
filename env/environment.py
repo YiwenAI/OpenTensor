@@ -1,13 +1,14 @@
 import numpy as np
 from math import sqrt
 
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join("..")))
+sys.path.append(os.path.abspath(os.path.join(".")))
+from utils import *
 
 # todo: 建议写成gym的标准形式 init reset step
 # todo: 可以少写函数 多写变量
-
-def outer(x, y, z):
-    # 得到三维张量，三维分别表示xyz
-    return np.einsum('i,j,k->ijk', x, y, z, dtype=np.int32)
 
 class Environment():
     '''
@@ -111,13 +112,15 @@ class Environment():
         判断cur_state是否为0
         返回: bool
         '''
-        return np.all(self.cur_state == 0)
+        return is_zero_tensor(self.cur_state)
     
     def reset(self,
               init_state=None):
         '''
         重置环境
         '''
+        if init_state is None:
+            init_state = self.get_init_state(self.S_size)        
         self.cur_state = init_state
         self.accumulate_reward = 0
         self.step_ct = 0

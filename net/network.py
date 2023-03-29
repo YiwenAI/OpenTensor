@@ -343,6 +343,7 @@ class Net(nn.Module):
     '''
     
     def __init__(self,
+                 T=7,
                  S_size=4,
                  N_steps=6,
                  coefficients=[0, 1, -1],
@@ -354,6 +355,7 @@ class Net(nn.Module):
         
         super(Net, self).__init__()
         # Parameters.
+        self.T = T
         self.S_size = S_size
         self.N_steps = N_steps
         self.coefficients = coefficients

@@ -1,1 +1,1 @@
-from MCTS import *
+from mcts.MCTS import *

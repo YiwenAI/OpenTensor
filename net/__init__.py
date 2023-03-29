@@ -1,1 +1,1 @@
-from network import *
+from net.network import *

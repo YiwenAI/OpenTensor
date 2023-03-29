@@ -1,1 +1,1 @@
-from AlphaTensor import *
+from agent.AlphaTensor import *
