@@ -135,17 +135,6 @@ class Node():
                   for i in range(self.children_n)]
         
         return self.children[np.argmax(scores)]
-    
-    
-    def set_root(self):
-        '''
-        Set itself as a root node.
-        But not change Q, N, pi.
-        '''
-        
-        self.parent = None
-        self.pre_action = None
-        self.pre_action_idx = None
         
     
 
@@ -208,7 +197,6 @@ class MCTS():
                 action_idx = idx
         
         self.root_node = self.root_node.children[action_idx]
-        self.root_node.set_root()
         
         
     def reset(self,
