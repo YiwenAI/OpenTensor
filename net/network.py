@@ -348,6 +348,9 @@ class Net(nn.Module):
                  N_steps=6,
                  coefficients=[0, 1, -1],
                  N_samples=32,
+                 n_attentive=8,
+                 N_heads=32,
+                 N_features=64,
                  **kwargs):
         '''
         初始化部分
@@ -366,11 +369,14 @@ class Net(nn.Module):
         self.N_samples = N_samples
         
         # Network.
-        self.torso = Torso(S_size=S_size)
+        self.torso = Torso(S_size=S_size, T=T,
+                           n_attentive=n_attentive)
         self.policy_head = PolicyHead(N_steps=N_steps,
                                       N_logits=N_logits,
-                                      N_samples=N_samples)
-        self.value_head = ValueHead()
+                                      N_samples=N_samples,
+                                      N_heads=N_heads,
+                                      N_features=N_features)
+        self.value_head = ValueHead(in_channel=N_features*N_heads)
         self.mode = "train"
         
     
@@ -425,15 +431,39 @@ class Net(nn.Module):
         action = []
         for logit in logits:                       # Get one action
             token = []
-            for _ in range(self.token_len):        # Get one token
+            for _ in range(token_len):             # Get one token
                 idx = logit % len(coefficients)
                 token.append(coefficients[idx])
                 logit = logit // len(coefficients)
             token.reverse()
             action.extend(token)
         
-        action = np.array(action).reshape((3, -1))
+        action = np.array(action, dtype=np.int32).reshape((3, -1))
         return action
+        
+        
+    def action_to_logits(self,
+                         action):
+        '''
+        action: A [3, S_size] array.
+        '''
+        
+        # Break action into tokens.
+        token_len = self.token_len
+        coefficients = self.coefficients
+        action = action.reshape((-1, token_len))     # [N_steps, token_len]
+        
+        # Get logits.
+        logits = []
+        for token in action:         # Get one logit.
+            # token = token.to_list()
+            logit = 0
+            token = token[::-1]
+            for idx, v in enumerate(token):
+                logit += coefficients.index(v) * (len(coefficients) ** idx)
+            logits.append(logit)
+            
+        return np.array(logits)
         
         
     def value(self, output, u_q=.75):
@@ -446,7 +476,7 @@ class Net(nn.Module):
         out_channels = q.shape[0]
         
         j = math.ceil(u_q * out_channels)
-        return q[(j-1):].mean()
+        return q, q[(j-1):].mean()
     
     
     def policy(self, output):
@@ -486,16 +516,22 @@ if __name__ == '__main__':
     # infer_output = policy_head([e])
     # import pdb; pdb.set_trace()
     
+    # net = Net()
+    # test_input = [np.random.randint(-1, 1, (7, 4, 4, 4)), np.random.randint(-1, 1, (3,))]
+    # test_g = torch.tensor([0,1,2,3,4,5])
+    # train_output = net([*test_input, test_g])
+    # import pdb; pdb.set_trace()
+    
+    # net.set_mode("infer")
+    # infer_output = net(test_input)
+    # import pdb; pdb.set_trace()
+    
+    # value = net.value(infer_output)
+    # policy = net.policy(infer_output)
+    # import pdb; pdb.set_trace()
+    
     net = Net()
-    test_input = [np.random.randint(-1, 1, (7, 4, 4, 4)), np.random.randint(-1, 1, (3,))]
-    test_g = torch.tensor([0,1,2,3,4,5])
-    train_output = net([*test_input, test_g])
-    import pdb; pdb.set_trace()
-    
-    net.set_mode("infer")
-    infer_output = net(test_input)
-    import pdb; pdb.set_trace()
-    
-    value = net.value(infer_output)
-    policy = net.policy(infer_output)
+    logits = np.array([0,1,2,2,1,1])
+    action = net.logits_to_action(logits)
+    logits = net.action_to_logits(action)
     import pdb; pdb.set_trace()

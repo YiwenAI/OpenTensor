@@ -1,12 +1,14 @@
 import numpy as np
 import torch
 import math
+from tqdm import tqdm
 
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join("..")))
 sys.path.append(os.path.abspath(os.path.join(".")))
 from env import Environment
+from net import Net
 from utils import *
 
 
@@ -50,7 +52,7 @@ class Node():
         
         
     def expand(self,
-               net):
+               net: Net):
         '''
         Expand this node.
         Return the value of this state.
@@ -62,6 +64,9 @@ class Node():
         #FIXME: Here we can apply a transposition table.
         
         # Get state for net evaluation.
+        # State: 
+        #   Tensors: [cur_state, last t=1 action, last t=2 action, ... last t=T-1 action]
+        #   Scalars: [depth(step_ct)]
         T = net.T
         tensors = np.zeros([T, *self.state.shape], dtype=np.int32)
         tensors[0] = self.state       # Current state.
@@ -75,7 +80,7 @@ class Node():
         
         net.set_mode("infer")
         output = net([tensors, scalars])
-        value, policy, prob = net.value(output), *net.policy(output)    # policy: [N_samples, 3, S_size]
+        value, _, policy, prob = *net.value(output), *net.policy(output)    # policy: [N_samples, 3, S_size]
         
         # Get empirical policy probability.
         N_samples = net.N_samples
@@ -152,15 +157,16 @@ class MCTS():
         '''
         
         self.simulate_times = simulate_times
-        self.root_node = Node(state=init_state,
-                              parent=None,
-                              pre_action=None,
-                              pre_action_idx=None)
+        if init_state is not None:
+            self.root_node = Node(state=init_state,
+                                parent=None,
+                                pre_action=None,
+                                pre_action_idx=None)
 
     
     def __call__(self,
                  state,
-                 net):
+                 net: Net):
         '''
         进行一次MCTS
         返回: action, actions, visit_pi
@@ -168,7 +174,7 @@ class MCTS():
 
         assert is_equal(state, self.root_node.state), "State is inconsistent."
 
-        for simu in range(self.simulate_times):
+        for simu in (range(self.simulate_times)):
             # Select a leaf node.
             node = self.root_node
             while not node.is_leaf:
@@ -205,7 +211,10 @@ class MCTS():
         Reset MCTS.
         '''
         
-        self.__init__(state)
+        self.root_node = Node(state=state,
+                            parent=None,
+                            pre_action=None,
+                            pre_action_idx=None)
     
     
     

@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 def outer(x, y, z):
     # 得到三维张量，三维分别表示xyz
@@ -14,3 +15,11 @@ def is_zero_tensor(tensor):
 def is_equal(a, b):
     assert a.shape == b.shape
     return np.all((a - b) == 0)
+
+def one_hot(a_s, num_classes):
+    result = torch.zeros((a_s.shape[0], num_classes)).long()
+    for idx, a in enumerate(a_s):
+        if a == -1:
+            continue
+        result[idx, a] = 1
+    return result

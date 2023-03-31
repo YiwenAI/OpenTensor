@@ -26,8 +26,8 @@ class Environment():
     def __init__(self,
                  S_size,
                  R_limit,
-                 actions=None,
                  init_state=None,
+                 T=7,
                  **kwargs):
         '''
         S_size: u, v, w的维度
@@ -36,12 +36,16 @@ class Environment():
         # 参数
         self.S_size = S_size
         self.R_limit = R_limit
+        self.T = T
         # 环境变量
         if init_state is None:
             init_state = self.get_init_state(S_size)
         self.cur_state = init_state
         self.accumulate_reward = 0
         self.step_ct = 0
+        
+        # 历史变量
+        self.hist_actions = [np.zeros_like(self.cur_state) for _ in range(self.T-1)]
         
     
     def get_init_state(self,
@@ -88,6 +92,7 @@ class Environment():
         self.cur_state -= outer(u, v, w)
         self.accumulate_reward -= 1
         self.step_ct += 1
+        self.hist_actions.append(action2tensor(action))
         # 判断是否终止
         if self.is_terminate():
             return True
@@ -124,6 +129,22 @@ class Environment():
         self.cur_state = init_state
         self.accumulate_reward = 0
         self.step_ct = 0
+        self.hist_actions = [np.zeros_like(self.cur_state) for _ in range(self.T-1)]
+        
+    def get_network_input(self):
+        '''
+        将变量组织成网络输入的格式
+        '''
+        T = self.T
+        S_size = self.S_size
+        hist_actions = self.hist_actions[-(T-1):]
+        hist_actions.reverse()
+        tensors = np.zeros((T, S_size, S_size, S_size), dtype=np.int32)
+        tensors[0] = self.cur_state
+        tensors[1:] = np.stack(hist_actions, axis=0)
+        scalars = np.array([self.step_ct, self.step_ct, self.step_ct])  #FIXME: Havn't decided the scalars.
+        
+        return tensors, scalars
         
         
 if __name__ == '__main__':
