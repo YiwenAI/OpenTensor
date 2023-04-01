@@ -17,9 +17,18 @@ def is_equal(a, b):
     return np.all((a - b) == 0)
 
 def one_hot(a_s, num_classes):
-    result = torch.zeros((a_s.shape[0], num_classes)).long()
-    for idx, a in enumerate(a_s):
-        if a == -1:
-            continue
-        result[idx, a] = 1
-    return result
+    if len(a_s.shape) == 1:
+        result = torch.zeros((a_s.shape[0], num_classes)).long()
+        for idx, a in enumerate(a_s):
+            if a == -1:
+                continue
+            result[idx, a] = 1
+        return result
+    elif len(a_s.shape) == 2:
+        result = torch.zeros((a_s.shape[0], a_s.shape[1], num_classes)).long()
+        for batch, a_batch in enumerate(a_s):
+            for idx, a in enumerate(a_batch):
+                if a == -1:
+                    continue
+                result[batch, idx, a] = 1
+        return result

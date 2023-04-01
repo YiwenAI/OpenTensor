@@ -17,12 +17,14 @@ class QuantileLoss(nn.Module):
         
     def forward(self, out, label) -> Variable:
         '''
-        out: q -> [N_quantiles]
-        label: g -> scalar.
+        out: q -> [batch_size, N_quantiles]
+        label: g -> [batch_size, ].
         '''
-        n = out.shape[0]
-        label = torch.ones_like(out) * label
-        tau = torch.arange(n) + .5 / n
+        n = out.shape[1]
+        batch_size = out.shape[0]
+        # label = torch.ones_like(out) * label
+        label = label.reshape((batch_size, 1)).repeat(1, n)
+        tau = ((torch.arange(n) + .5 )/ n).repeat(batch_size, 1)
         d = label - out
         h = self.huber_loss(out, label)
         k = torch.abs(tau - (d < 0).float())

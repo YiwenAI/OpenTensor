@@ -8,7 +8,6 @@ import os
 sys.path.append(os.path.abspath(os.path.join("..")))
 sys.path.append(os.path.abspath(os.path.join(".")))
 from loss import QuantileLoss
-from net import *
 from env import *
 from mcts import *
 from utils import *
@@ -62,7 +61,15 @@ class Trainer():
         '''
         从数据库中采样
         '''
-        return random.sample(self.examples, samples_n)
+        sampled = random.sample(self.examples, samples_n)
+        # Merge example into a batch.
+        batch_tensor = np.stack([episode[0][0] for episode in sampled], axis=0)
+        batch_scalar = np.stack([episode[0][1] for episode in sampled], axis=0)
+        batch_action = np.stack([episode[1] for episode in sampled], axis=0)
+        batch_value = np.stack([episode[2] for episode in sampled], axis=0)
+        
+        return [batch_tensor, batch_scalar], batch_action, batch_value
+        
     
     def data_augment(self,
                      examples):
@@ -126,27 +133,29 @@ class Trainer():
         return total_results
         
     
-    def learn_one_episode(self,
-                          example) -> torch.autograd.Variable:
+    def learn_one_batch(self,
+                        batch_example) -> torch.autograd.Variable:
         '''
         对一个元组进行学习
         '''
         
         # Groundtruth.
-        s, a_gt, v_gt = example
-        a_gt = torch.tensor(self.net.action_to_logits(a_gt)).long()
+        s, a_gt, v_gt = batch_example     # s: [tensor, scalar]
+        a_gt = torch.tensor(np.stack([self.net.action_to_logits(a) for a in a_gt], axis=0)).long()
+        v_gt = torch.tensor(v_gt).float()
         
         # Network infer.
         self.net.set_mode("train")
         output = self.net([*s, a_gt])
-        o, q = output                   # o: [N_steps, N_logits], q: [N_quantiles]
+        o, q = output                   # o: [batch_size, N_steps, N_logits], q: [batch_size, N_quantiles]
         
         # Losses.
-        v_loss = self.quantile_loss(q, v_gt)    # v_gt: scalar.
-        a_loss = self.entropy_loss(o, a_gt)     # a_gt: [N_logits,]
+        v_loss = self.quantile_loss(q, v_gt)    # v_gt: [batch_size,]
+        o, a_gt = o.reshape((-1, o.shape[-1])), a_gt.reshape((-1,))    # o: [batch_size*N_steps, N_logits]
+        a_loss = self.entropy_loss(o, a_gt)     # a_gt: [batch_size*N_steps]
         loss = self.v_weight * v_loss + self.a_weight * a_loss
 
-        return loss
+        return loss, v_loss, a_loss
         
         
     def learn(self):
@@ -164,20 +173,20 @@ class Trainer():
             # 2. self-play for data.
             # self.examples.extend(self.play(self.net))
 
-            examples = self.sample_examples(samples_n=batch_size)
+            batch_example = self.sample_examples(samples_n=batch_size)
 
             # 此处进行多进程优化
             # todo: 什么时候更新网络参数
             optimizer.zero_grad()
-            for example in examples:
-                loss = self.learn_one_episode(example) / batch_size
-                loss.backward(retain_graph=True)          #FIXME: Batch size right?
+            loss, v_loss, a_loss = self.learn_one_batch(batch_example)
+            loss.backward()
             optimizer.step()
             scheduler.step()
             
             # 添加logger部分
-            if iter % 10 == 0:
-                print("Loss: %f" % loss.detach().cpu().item())
+            if iter % 100 == 0:
+                print("Loss: %f, v_loss: %f, a_loss: %f" %
+                      (loss.detach().cpu().item(), v_loss.detach().cpu().item(), a_loss.detach().cpu().item()))
             
             
     def play(self) -> list:
