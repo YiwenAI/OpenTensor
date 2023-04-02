@@ -1,6 +1,8 @@
+import time
 import random
 from tqdm import tqdm 
 import torch
+from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 import sys
@@ -26,7 +28,8 @@ class Trainer():
                  coefficients=[0, 1, -1],
                  batch_size=64,
                  iters_n=50000,
-                 save_dir="ckpt",
+                 exp_dir="exp",
+                 exp_name="debug",
                  **kwargs):
         '''
         初始化一个Trainer.
@@ -43,20 +46,25 @@ class Trainer():
         
         self.entropy_loss = torch.nn.CrossEntropyLoss()
         self.quantile_loss = QuantileLoss()
-        self.a_weight = 1
-        self.v_weight = .1
+        self.a_weight = .1
+        self.v_weight = .9
         
         self.optimizer = torch.optim.AdamW(net.parameters(),
                                            weight_decay=1e-5,
                                            lr=1e-4)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
                                                          step_size=500000,
-                                                         gamma=.1)
+                                                         gamma=.1)        
         self.batch_size = batch_size
         self.iters_n = iters_n
         
-        self.save_dir = save_dir
-
+        self.exp_dir = exp_dir
+        self.save_dir = os.path.join(exp_dir, exp_name, str(int(time.time())))
+        os.makedirs(self.save_dir)
+        
+        self.log_dir = os.path.join(self.save_dir, "log")
+        os.makedirs(self.log_dir)
+        self.log_writer = SummaryWriter(self.log_dir)
 
     
     def sample_examples(self,
@@ -83,7 +91,7 @@ class Trainer():
     
     def generate_synthetic_examples(self,
                                     prob=[.8, .1, .1],
-                                    samples_n=100000,
+                                    samples_n=10000,
                                     R_limit=12) -> list:
         '''
         生成人工合成的Tensor examples
@@ -166,7 +174,7 @@ class Trainer():
         训练的主函数
         '''
         optimizer = self.optimizer
-        scheduler = self.scheduler
+        scheduler = self.scheduler    
         batch_size = self.batch_size
         
         # 1. Get synthetic examples.
@@ -187,9 +195,12 @@ class Trainer():
             scheduler.step()
             
             # 添加logger部分
-            if iter % 100 == 0:
-                print("Loss: %f, v_loss: %f, a_loss: %f" %
-                      (loss.detach().cpu().item(), v_loss.detach().cpu().item(), a_loss.detach().cpu().item()))
+            if iter % 20 == 0:
+                # print("Loss: %f, v_loss: %f, a_loss: %f" %
+                #       (loss.detach().cpu().item(), v_loss.detach().cpu().item(), a_loss.detach().cpu().item()))
+                self.log_writer.add_scalar("loss", loss.detach().cpu().item(), global_step=iter)
+                self.log_writer.add_scalar("v_loss", v_loss.detach().cpu().item(), global_step=iter)
+                self.log_writer.add_scalar("a_loss", a_loss.detach().cpu().item(), global_step=iter)
             
             if iter % 10000 == 0:
                 ckpt_name = "it%07d.pth" % iter
@@ -265,7 +276,9 @@ class Trainer():
         
     
     def save_model(self, ckpt_name):
-        save_path = os.path.join(self.save_dir, ckpt_name)
+        save_dir = os.path.join(self.save_dir, "ckpt")
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, ckpt_name)
         torch.save({'model': self.net.state_dict()}, save_path)
 
 
@@ -284,12 +297,13 @@ if __name__ == '__main__':
     env = Environment(S_size=4,
                       R_limit=8, T=3)
     
-    trainer = Trainer(net=net, env=env, mcts=mcts, T=3)
+    trainer = Trainer(net=net, env=env, mcts=mcts, T=3,
+                      save_dir="ckpt/debug")
     # import pdb; pdb.set_trace()
     # res = trainer.play()
     # res = trainer.generate_synthetic_examples()
-    # trainer.learn()
-    # import pdb; pdb.set_trace()
-    trainer.load_model("./ckpt/it0050000.pth")
+    trainer.learn()
+    import pdb; pdb.set_trace()
+    # trainer.load_model("./ckpt/it0050000.pth")
     trainer.infer()
     

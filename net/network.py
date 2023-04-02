@@ -38,9 +38,9 @@ class Torso(nn.Module):
         self.n_attentive = n_attentive
         self.mode = mode
         
-        self.attentive_modes = [AttentiveModes(S_size, channel) for _ in range(n_attentive)]
-        self.scalar2grid = [nn.Linear(scalar_size, S_size**2) for _ in range(3)]                    # s -> S*S
-        self.grid2grid = [nn.Linear(S_size**2*(T*S_size+1), S_size**2*channel) for _ in range(3)]   # S*S*TS+1 -> S*S*c
+        self.attentive_modes = nn.Sequential(*[AttentiveModes(S_size, channel) for _ in range(n_attentive)])
+        self.scalar2grid = nn.Sequential(*[nn.Linear(scalar_size, S_size**2) for _ in range(3)])                    # s -> S*S
+        self.grid2grid = nn.Sequential(*[nn.Linear(S_size**2*(T*S_size+1), S_size**2*channel) for _ in range(3)])   # S*S*TS+1 -> S*S*c
         
         
     def forward(self, x):
@@ -104,11 +104,11 @@ class AttentiveModes(nn.Module):
         self.channel = channel
         self.S_size = S_size
         
-        self.attentions = [Attention(channel,
-                                     channel,
-                                     2*S_size,
-                                     2*S_size,
-                                     False) for _ in range(S_size)]
+        self.attentions = nn.Sequential(*[Attention(channel,
+                                          channel,
+                                          2*S_size,
+                                          2*S_size,
+                                          False) for _ in range(S_size)])
         
     def forward(self, x):
         
@@ -220,22 +220,22 @@ class PolicyHead(nn.Module):
         
         self.linear_1 = nn.Linear(N_logits, N_features * N_heads)
         self.pos_embed = nn.Linear(1, N_features * N_heads)
-        self.self_layer_norms = [nn.LayerNorm((N_features * N_heads)) for _ in range(N_layers)]
-        self.cross_layer_norms = [nn.LayerNorm(( N_features * N_heads)) for _ in range(N_layers)]   #FIXME: How to choose layer norm's channel?
-        self.self_attentions = [Attention(x_channel=N_features * N_heads,
-                                          y_channel=N_features * N_heads,
-                                          N_x=N_steps,
-                                          N_y=N_steps,
-                                          causal_mask=True,
-                                          N_heads=N_heads) for _ in range(N_layers)]
-        self.cross_attentions = [Attention(x_channel=N_features * N_heads,
-                                           y_channel=torso_feature_shape[1],
-                                           N_x=N_steps,
-                                           N_y=torso_feature_shape[0],
-                                           causal_mask=False,
-                                           N_heads=N_heads) for _ in range(N_layers)]
-        self.self_dropouts = [nn.Dropout() for _ in range(N_layers)]
-        self.cross_dropouts = [nn.Dropout() for _ in range(N_layers)]
+        self.self_layer_norms = nn.Sequential(*[nn.LayerNorm((N_features * N_heads)) for _ in range(N_layers)])
+        self.cross_layer_norms = nn.Sequential(*[nn.LayerNorm(( N_features * N_heads)) for _ in range(N_layers)])   #FIXME: How to choose layer norm's channel?
+        self.self_attentions = nn.Sequential(*[Attention(x_channel=N_features * N_heads,
+                                               y_channel=N_features * N_heads,
+                                               N_x=N_steps,
+                                               N_y=N_steps,
+                                               causal_mask=True,
+                                               N_heads=N_heads) for _ in range(N_layers)])
+        self.cross_attentions = nn.Sequential(*[Attention(x_channel=N_features * N_heads,
+                                                y_channel=torso_feature_shape[1],
+                                                N_x=N_steps,
+                                                N_y=torso_feature_shape[0],
+                                                causal_mask=False,
+                                                N_heads=N_heads) for _ in range(N_layers)])
+        self.self_dropouts = nn.Sequential(*[nn.Dropout() for _ in range(N_layers)])
+        self.cross_dropouts = nn.Sequential(*[nn.Dropout() for _ in range(N_layers)])
         self.relu = nn.ReLU()
         self.linear_2 = nn.Linear(N_features * N_heads, N_logits)
         
@@ -340,9 +340,9 @@ class ValueHead(nn.Module):
         self.mode = "train"
         
         self.in_linear = nn.Linear(in_channel, inter_channel)
-        self.linaers = [nn.Linear(inter_channel, inter_channel) for _ in range(N_layers-1)]
+        self.linaers = nn.Sequential(*[nn.Linear(inter_channel, inter_channel) for _ in range(N_layers-1)])
         self.out_linear = nn.Linear(inter_channel, out_channel)
-        self.relus = [nn.ReLU() for _ in range(N_layers)]
+        self.relus = nn.Sequential(*[nn.ReLU() for _ in range(N_layers)])
         
     
     def forward(self, x):
