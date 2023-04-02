@@ -49,7 +49,8 @@ class Environment():
         
     
     def get_init_state(self,
-                       S_size):
+                       S_size,
+                       no_base_change=False):
         '''
         得到一个初始化状态: state
         S_size: u, v, w的维度
@@ -120,12 +121,13 @@ class Environment():
         return is_zero_tensor(self.cur_state)
     
     def reset(self,
-              init_state=None):
+              init_state=None,
+              no_base_change=False):
         '''
         重置环境
         '''
         if init_state is None:
-            init_state = self.get_init_state(self.S_size)        
+            init_state = self.get_init_state(self.S_size, no_base_change)        
         self.cur_state = init_state
         self.accumulate_reward = 0
         self.step_ct = 0

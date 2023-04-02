@@ -26,6 +26,7 @@ class Trainer():
                  coefficients=[0, 1, -1],
                  batch_size=64,
                  iters_n=50000,
+                 save_dir="ckpt",
                  **kwargs):
         '''
         初始化一个Trainer.
@@ -43,7 +44,7 @@ class Trainer():
         self.entropy_loss = torch.nn.CrossEntropyLoss()
         self.quantile_loss = QuantileLoss()
         self.a_weight = 1
-        self.v_weight = 1
+        self.v_weight = .1
         
         self.optimizer = torch.optim.AdamW(net.parameters(),
                                            weight_decay=1e-5,
@@ -53,6 +54,8 @@ class Trainer():
                                                          gamma=.1)
         self.batch_size = batch_size
         self.iters_n = iters_n
+        
+        self.save_dir = save_dir
 
 
     
@@ -80,7 +83,7 @@ class Trainer():
     
     def generate_synthetic_examples(self,
                                     prob=[.8, .1, .1],
-                                    samples_n=5000,
+                                    samples_n=100000,
                                     R_limit=12) -> list:
         '''
         生成人工合成的Tensor examples
@@ -188,6 +191,12 @@ class Trainer():
                 print("Loss: %f, v_loss: %f, a_loss: %f" %
                       (loss.detach().cpu().item(), v_loss.detach().cpu().item(), a_loss.detach().cpu().item()))
             
+            if iter % 10000 == 0:
+                ckpt_name = "it%07d.pth" % iter
+                self.save_model(ckpt_name)
+        
+        self.save_model("final.pth")
+            
             
     def play(self) -> list:
         '''
@@ -205,10 +214,10 @@ class Trainer():
         while True:
             
             action, actions, pi = mcts(env.cur_state, net)
-            cur_state = env.get_network_input()                        # [tensors, scalars]
-            terminate_flag = env.step(action)                          # Will change self.cur_state. 
-            mcts.move(action)                                          # Move MCTS forward.    
-            results.append([cur_state, action])                        # Record. (s, a).
+            state_input = env.get_network_input()                        # [tensors, scalars]
+            terminate_flag = env.step(action)                            # Will change self.cur_state. 
+            mcts.move(action)                                            # Move MCTS forward.    
+            results.append([state_input, action])                        # Record. (s, a).
             # print("Step forward %d" % env.step_ct)
             
             if terminate_flag:
@@ -219,6 +228,50 @@ class Trainer():
                     # a is not included in the history actions of s.
                 return results
             
+    
+    def infer(self,
+              mcts_simu_times=400,
+              mcts_samples_n=16,
+              step_limit=12):
+        
+        actions = []
+        
+        net = self.net
+        env = self.env
+        mcts = self.mcts
+        
+        env.reset(no_base_change=True)
+        net.set_mode("infer")
+        net.set_samples_n(mcts_samples_n)
+        mcts.reset(env.cur_state, simulate_times=mcts_simu_times)
+        env.R_limit = step_limit
+        
+        for step in tqdm(range(step_limit)):
+            print("Current state is (step%d):" % step)
+            print(env.cur_state)
+            
+            action, actions, pi = mcts(env.cur_state, net)
+            print("We choose action(step%d):" % step)
+            print(action)
+            terminate_flag = env.step(action)                            # Will change self.cur_state. 
+            mcts.move(action)                                            # Move MCTS forward.       
+            actions.append(action)     
+            
+        print("Final result:")
+        print(env.cur_state)
+        
+        print("Actions are:")
+        print(np.stack(actions, axis=0))
+        
+    
+    def save_model(self, ckpt_name):
+        save_path = os.path.join(self.save_dir, ckpt_name)
+        torch.save({'model': self.net.state_dict()}, save_path)
+
+
+    def load_model(self, ckpt_path):
+        state_dict = torch.load(ckpt_path)
+        self.net.load_state_dict(state_dict['model'])
             
             
 if __name__ == '__main__':
@@ -232,8 +285,11 @@ if __name__ == '__main__':
                       R_limit=8, T=3)
     
     trainer = Trainer(net=net, env=env, mcts=mcts, T=3)
-    
+    # import pdb; pdb.set_trace()
     # res = trainer.play()
     # res = trainer.generate_synthetic_examples()
-    trainer.learn()
-    import pdb; pdb.set_trace()
+    # trainer.learn()
+    # import pdb; pdb.set_trace()
+    trainer.load_model("./ckpt/it0050000.pth")
+    trainer.infer()
+    

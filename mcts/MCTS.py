@@ -80,7 +80,7 @@ class Node():
         
         net.set_mode("infer")
         output = net([tensors, scalars])
-        value, _, policy, prob = *net.value(output), *net.policy(output)    # policy: [N_samples, 3, S_size]
+        _, value, policy, prob = *net.value(output), *net.policy(output)    # policy: [N_samples, 3, S_size]
         
         # Get empirical policy probability.
         N_samples = net.N_samples
@@ -174,7 +174,7 @@ class MCTS():
 
         assert is_equal(state, self.root_node.state), "State is inconsistent."
 
-        for simu in (range(self.simulate_times)):
+        for simu in tqdm(range(self.simulate_times)):
             # Select a leaf node.
             node = self.root_node
             while not node.is_leaf:
@@ -206,11 +206,13 @@ class MCTS():
         
         
     def reset(self,
-              state):
+              state,
+              simulate_times=None):
         '''
         Reset MCTS.
         '''
-        
+        if simulate_times is not None:
+            self.simulate_times = simulate_times
         self.root_node = Node(state=state,
                             parent=None,
                             pre_action=None,

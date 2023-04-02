@@ -283,6 +283,11 @@ class PolicyHead(nn.Module):
         
         assert mode in ["train", "infer"]
         self.mode = mode
+        
+        
+    def set_samples_n(self,
+                      N_samples):
+        self.N_samples = N_samples
     
       
     def predict_action_logits(self,
@@ -450,6 +455,12 @@ class Net(nn.Module):
         
         assert mode in ["train", "infer"]
         self.mode = mode
+        
+    
+    def set_samples_n(self,
+                      N_samples):
+        self.N_samples = N_samples    
+        self.policy_head.set_samples_n(N_samples)
         
     
     def logits_to_action(self, logits):
