@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 
 class CrossEntropyLoss(nn.Module):
@@ -13,7 +14,6 @@ class QuantileLoss(nn.Module):
                  delta=1):
         super(QuantileLoss, self).__init__()
         self.delta = delta
-        self.huber_loss = nn.HuberLoss(delta=delta, reduction="none")
         
     def forward(self, out, label) -> Variable:
         '''
@@ -26,8 +26,7 @@ class QuantileLoss(nn.Module):
         label = label.reshape((batch_size, 1)).repeat(1, n)
         tau = ((torch.arange(n) + .5 )/ n).repeat(batch_size, 1)
         d = label - out
-        h = self.huber_loss(out, label)
+        h = F.huber_loss(out, label, reduction='none', delta=self.delta)
         k = torch.abs(tau - (d < 0).float())
         loss = torch.mean(k * h)
-        loss = Variable(loss, requires_grad=True)
         return loss

@@ -89,6 +89,7 @@ class Node():
         pi = []
         for pos in range(N_samples):               # Naive loop.
             action = policy[pos]
+            action = canonicalize_action(action)   # canonicalization.
             if not rec[pos]:
                 # Count.
                 actions.append(action)

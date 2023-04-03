@@ -3,3 +3,7 @@
 3. MCTS公式化表示
 4. 网络输入时选择的scalars
 5. MCTS时是否应该没有上限？
+
+need to check:
+	1. Causal mask?
+	2. 

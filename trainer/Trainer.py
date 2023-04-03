@@ -46,14 +46,14 @@ class Trainer():
         
         self.entropy_loss = torch.nn.CrossEntropyLoss()
         self.quantile_loss = QuantileLoss()
-        self.a_weight = .1
-        self.v_weight = .9
+        self.a_weight = .5
+        self.v_weight = .5
         
         self.optimizer = torch.optim.AdamW(net.parameters(),
                                            weight_decay=1e-5,
-                                           lr=1e-4)
+                                           lr=1e-3)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
-                                                         step_size=500000,
+                                                         step_size=40000,
                                                          gamma=.1)        
         self.batch_size = batch_size
         self.iters_n = iters_n
@@ -152,6 +152,7 @@ class Trainer():
         
         # Groundtruth.
         s, a_gt, v_gt = batch_example     # s: [tensor, scalar]
+        a_gt = [canonicalize_action(a) for a in a_gt]
         a_gt = torch.tensor(np.stack([self.net.action_to_logits(a) for a in a_gt], axis=0)).long()
         v_gt = torch.tensor(v_gt).float()
         
@@ -178,7 +179,7 @@ class Trainer():
         batch_size = self.batch_size
         
         # 1. Get synthetic examples.
-        self.examples.extend(self.generate_synthetic_examples(samples_n=3000))
+        self.examples.extend(self.generate_synthetic_examples(samples_n=10000))
         
         for iter in tqdm(range(self.iters_n)):
             # 2. self-play for data.
