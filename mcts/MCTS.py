@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 import sys
 import os
+import copy
 sys.path.append(os.path.abspath(os.path.join("..")))
 sys.path.append(os.path.abspath(os.path.join(".")))
 from env import Environment
@@ -81,6 +82,7 @@ class Node():
         net.set_mode("infer")
         output = net([tensors, scalars])
         _, value, policy, prob = *net.value(output), *net.policy(output)    # policy: [N_samples, 3, S_size]
+        policy = [canonicalize_action(action) for action in policy]
         
         # Get empirical policy probability.
         N_samples = net.N_samples
@@ -89,7 +91,6 @@ class Node():
         pi = []
         for pos in range(N_samples):               # Naive loop.
             action = policy[pos]
-            action = canonicalize_action(action)   # canonicalization.
             if not rec[pos]:
                 # Count.
                 actions.append(action)
@@ -202,8 +203,11 @@ class MCTS():
         for idx, child_action in enumerate(self.root_node.actions):
             if is_equal(child_action, action):
                 action_idx = idx
-        
-        self.root_node = self.root_node.children[action_idx]
+                
+        self.root_node.children.append(copy.deepcopy(self.root_node.children[action_idx]))
+        self.root_node.children.reverse()
+        [self.root_node.children.pop() for _ in range(idx+1)]
+        self.root_node = self.root_node.children[0]
         
         
     def reset(self,

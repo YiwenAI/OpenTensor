@@ -26,10 +26,11 @@ class Trainer():
                  S_size=4,
                  T=7,
                  coefficients=[0, 1, -1],
-                 batch_size=64,
-                 iters_n=50000,
+                 batch_size=256,
+                 iters_n=200000,
                  exp_dir="exp",
                  exp_name="debug",
+                 device="cuda",
                  **kwargs):
         '''
         初始化一个Trainer.
@@ -53,18 +54,17 @@ class Trainer():
                                            weight_decay=1e-5,
                                            lr=1e-3)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
-                                                         step_size=40000,
+                                                         step_size=100000,
                                                          gamma=.1)        
         self.batch_size = batch_size
         self.iters_n = iters_n
         
         self.exp_dir = exp_dir
-        self.save_dir = os.path.join(exp_dir, exp_name, str(int(time.time())))
-        os.makedirs(self.save_dir)
-        
+        self.save_dir = os.path.join(exp_dir, exp_name, str(int(time.time())))  
         self.log_dir = os.path.join(self.save_dir, "log")
-        os.makedirs(self.log_dir)
-        self.log_writer = SummaryWriter(self.log_dir)
+        
+        self.device = device
+        self.net.to(device)
 
     
     def sample_examples(self,
@@ -89,6 +89,7 @@ class Trainer():
         '''
         pass
     
+    
     def generate_synthetic_examples(self,
                                     prob=[.8, .1, .1],
                                     samples_n=10000,
@@ -102,7 +103,7 @@ class Trainer():
         T = self.T
         
         total_results = []
-        for _ in (range(samples_n)):
+        for _ in tqdm(range(samples_n)):
             R = random.randint(1, R_limit)
             sample = np.zeros((S_size, S_size, S_size), dtype=np.int32)
             states = []        
@@ -153,8 +154,8 @@ class Trainer():
         # Groundtruth.
         s, a_gt, v_gt = batch_example     # s: [tensor, scalar]
         a_gt = [canonicalize_action(a) for a in a_gt]
-        a_gt = torch.tensor(np.stack([self.net.action_to_logits(a) for a in a_gt], axis=0)).long()
-        v_gt = torch.tensor(v_gt).float()
+        a_gt = torch.tensor(np.stack([self.net.action_to_logits(a) for a in a_gt], axis=0)).long().to(self.device)
+        v_gt = torch.tensor(v_gt).float().to(self.device)
         
         # Network infer.
         self.net.set_mode("train")
@@ -170,7 +171,8 @@ class Trainer():
         return loss, v_loss, a_loss
         
         
-    def learn(self):
+    def learn(self,
+              resume=None):
         '''
         训练的主函数
         '''
@@ -178,10 +180,17 @@ class Trainer():
         scheduler = self.scheduler    
         batch_size = self.batch_size
         
-        # 1. Get synthetic examples.
-        self.examples.extend(self.generate_synthetic_examples(samples_n=10000))
+        os.makedirs(self.save_dir)
+        os.makedirs(self.log_dir)
+        self.log_writer = SummaryWriter(self.log_dir)
         
-        for iter in tqdm(range(self.iters_n)):
+        if resume is not None:
+            old_iter = self.load_model(resume)
+        
+        # 1. Get synthetic examples.
+        self.examples.extend(self.generate_synthetic_examples(samples_n=200000))
+        
+        for iter in tqdm(range(old_iter, self.iters_n)):
             # 2. self-play for data.
             # self.examples.extend(self.play(self.net))
 
@@ -256,7 +265,7 @@ class Trainer():
         net.set_mode("infer")
         net.set_samples_n(mcts_samples_n)
         mcts.reset(env.cur_state, simulate_times=mcts_simu_times)
-        env.R_limit = step_limit
+        env.R_limit = step_limit + 1
         
         for step in tqdm(range(step_limit)):
             print("Current state is (step%d):" % step)
@@ -269,6 +278,10 @@ class Trainer():
             mcts.move(action)                                            # Move MCTS forward.       
             actions.append(action)     
             
+            if terminate_flag:
+                print("We get to the end!")
+                
+            
         print("Final result:")
         print(env.cur_state)
         
@@ -276,35 +289,45 @@ class Trainer():
         print(np.stack(actions, axis=0))
         
     
-    def save_model(self, ckpt_name):
+    def save_model(self, ckpt_name, iter):
         save_dir = os.path.join(self.save_dir, "ckpt")
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, ckpt_name)
-        torch.save({'model': self.net.state_dict()}, save_path)
+        torch.save({'model': self.net.state_dict(),
+                    'iter': iter,
+                    'optimizer': self.optimizer.state_dict(),
+                    'scheduler': self.scheduler.state_dict()}, save_path)
 
 
     def load_model(self, ckpt_path):
-        state_dict = torch.load(ckpt_path)
-        self.net.load_state_dict(state_dict['model'])
-            
+        ckpt = torch.load(ckpt_path)
+        self.net.load_state_dict(ckpt['model'])
+        self.optimizer.load_state_dict(ckpt['optimizer'])
+        self.scheduler.load_state_dict(ckpt['scheduler'])
+        return ckpt['iter']
+        
             
 if __name__ == '__main__':
     
     net = Net(N_samples=2,
-              T=3, N_steps=3,
-              n_attentive=4, N_heads=16, N_features=16)
+              T=5, N_steps=6,
+              n_attentive=4, N_heads=16, N_features=16,
+              device='cuda')
     mcts = MCTS(simulate_times=20,
                 init_state=None)
     env = Environment(S_size=4,
-                      R_limit=8, T=3)
+                      R_limit=8, T=5)
     
-    trainer = Trainer(net=net, env=env, mcts=mcts, T=3,
-                      save_dir="ckpt/debug")
+    trainer = Trainer(net=net, env=env, mcts=mcts, T=5,
+                      save_dir="ckpt/debug",
+                      device='cuda')
+    
+    
     # import pdb; pdb.set_trace()
     # res = trainer.play()
     # res = trainer.generate_synthetic_examples()
     trainer.learn()
     import pdb; pdb.set_trace()
-    # trainer.load_model("./ckpt/it0050000.pth")
-    trainer.infer()
+    # trainer.load_model("./exp/debug/1680583349/ckpt/final.pth")
+    # trainer.infer()
     

@@ -6,4 +6,5 @@
 
 need to check:
 	1. Causal mask?
-	2. 
+	2. 标准化的bug
+	3. 释放MCTS内存？

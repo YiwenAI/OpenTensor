@@ -29,6 +29,7 @@ class Torso(nn.Module):
                  scalar_size=3,
                  n_attentive=8,
                  mode="train",
+                 device='cuda',
                  **kwargs):
         super(Torso, self).__init__()
         self.S_size = S_size
@@ -37,6 +38,7 @@ class Torso(nn.Module):
         self.T = T
         self.n_attentive = n_attentive
         self.mode = mode
+        self.device = device
         
         self.attentive_modes = nn.Sequential(*[AttentiveModes(S_size, channel) for _ in range(n_attentive)])
         self.scalar2grid = nn.Sequential(*[nn.Linear(scalar_size, S_size**2) for _ in range(3)])                    # s -> S*S
@@ -55,7 +57,7 @@ class Torso(nn.Module):
         n_attentive = self.n_attentive
         
         input_t, input_s = x      # Tensor input and Scalar input.
-        input_t, input_s = torch.from_numpy(input_t).float(), torch.from_numpy(input_s).float()
+        input_t, input_s = torch.from_numpy(input_t).float().to(self.device), torch.from_numpy(input_s).float().to(self.device)
         if self.mode == "infer":
             assert len(input_t.shape) == 4 and len(input_s.shape) == 1, \
                 "Infer mode does not support batch."
@@ -99,7 +101,8 @@ class AttentiveModes(nn.Module):
     
     def __init__(self,
                  S_size=4,
-                 channel=3):
+                 channel=3,
+                 device='cuda'):
         super(AttentiveModes, self).__init__()
         self.channel = channel
         self.S_size = S_size
@@ -108,7 +111,8 @@ class AttentiveModes(nn.Module):
                                           channel,
                                           2*S_size,
                                           2*S_size,
-                                          False) for _ in range(S_size)])
+                                          False,
+                                          device=device) for _ in range(S_size)])
         
     def forward(self, x):
         
@@ -137,7 +141,8 @@ class Attention(nn.Module):
                  causal_mask=False,
                  N_heads=16,
                  d=32,
-                 w=4):
+                 w=4,
+                 device='cuda'):
         
         super(Attention, self).__init__()
         self.x_channel, self.y_channel = x_channel, y_channel
@@ -145,6 +150,7 @@ class Attention(nn.Module):
         self.causal_mask = causal_mask
         self.N_heads = N_heads
         self.d, self.w = d, w
+        self.device = device
         
         self.x_layer_norm = nn.LayerNorm((x_channel,))
         self.y_layer_norm = nn.LayerNorm((y_channel,))
@@ -184,7 +190,7 @@ class Attention(nn.Module):
         
         scores = torch.matmul(q_s, k_s.transpose(-1, -2)) / np.sqrt(d)    # [batch_size, N_heads, N_x, N_y]
         if self.causal_mask:
-            mask = torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)).float()
+            mask = torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)).float().to(self.device)
             scores = scores * mask
             
         o_s = torch.matmul(scores, v_s)   # [batch_size, N_heads, N_x, d]
@@ -206,7 +212,8 @@ class PolicyHead(nn.Module):
                  N_layers=2,
                  N_samples=32,
                  torso_feature_shape=(3*4**2, 3),
-                 mode='train'):
+                 mode='train',
+                 device='cuda'):
         
         super(PolicyHead, self).__init__()
         self.N_steps = N_steps
@@ -217,6 +224,7 @@ class PolicyHead(nn.Module):
         self.torso_feature_shape = torso_feature_shape
         self.N_samples = N_samples
         self.mode = mode
+        self.device = device
         
         self.linear_1 = nn.Linear(N_logits, N_features * N_heads)
         self.pos_embed = nn.Linear(1, N_features * N_heads)
@@ -227,13 +235,15 @@ class PolicyHead(nn.Module):
                                                N_x=N_steps,
                                                N_y=N_steps,
                                                causal_mask=True,
-                                               N_heads=N_heads) for _ in range(N_layers)])
+                                               N_heads=N_heads,
+                                               device=device) for _ in range(N_layers)])
         self.cross_attentions = nn.Sequential(*[Attention(x_channel=N_features * N_heads,
                                                 y_channel=torso_feature_shape[1],
                                                 N_x=N_steps,
                                                 N_y=torso_feature_shape[0],
                                                 causal_mask=False,
-                                                N_heads=N_heads) for _ in range(N_layers)])
+                                                N_heads=N_heads,
+                                                device=device) for _ in range(N_layers)])
         self.self_dropouts = nn.Sequential(*[nn.Dropout() for _ in range(N_layers)])
         self.cross_dropouts = nn.Sequential(*[nn.Dropout() for _ in range(N_layers)])
         self.relu = nn.ReLU()
@@ -250,23 +260,24 @@ class PolicyHead(nn.Module):
         N_steps = self.N_steps
         N_logits = self.N_logits
         N_samples = self.N_samples
+        device = self.device
         assert self.mode in ['train', 'infer']
         
         if self.mode == 'train':
             e, g = x                            # g: {0,1,... N_logits-1} ^ [B, N_steps], [B, N_steps]
-            g_onehot = one_hot(g, num_classes=N_logits).float()     # [B, N_steps, N_logits]
+            g_onehot = one_hot(g, num_classes=N_logits).float().to(device)     # [B, N_steps, N_logits]
             #FIXME: We haven't applied "shift" operation.
             o, z = self.predict_action_logits(g_onehot, e)    # o: [B, N_steps, N_logits]; z: [B, N_steps, N_features*N_heads]
             return o, z[:, 0]                   # o: [B, N_steps, N_logits]; z[:, 0]: [B, N_features*N_heads]
         
         elif self.mode == 'infer':
             e = x[0]                            # e: [B, m, c], B=1
-            a = -torch.ones((N_samples, N_steps)).long()       # a: {-1,0,1, ... N_logits-1} ^ [N_samples, N_steps]
-            p = torch.ones((N_samples,)).float()
+            a = -torch.ones((N_samples, N_steps)).long().to(device)       # a: {-1,0,1, ... N_logits-1} ^ [N_samples, N_steps]
+            p = torch.ones((N_samples,)).float().to(device)
             
             for s in range(N_samples):
                 for i in range(N_steps):
-                    o, z = self.predict_action_logits(one_hot(a[s], num_classes=N_logits).float()[None], e)     #FIXME: How to represent the start action?
+                    o, z = self.predict_action_logits(one_hot(a[s], num_classes=N_logits).float().to(device)[None], e)    #FIXME: How to represent the start action?
                     o, z = o[0], z[0]           # No use batch dim.  o: [N_steps, N_logits], z:[N_steps, N_features*N_heads]
                     prob = F.softmax(o[i], dim=0)
                     sampled_a = torch.multinomial(prob, 1)
@@ -299,11 +310,12 @@ class PolicyHead(nn.Module):
         N_heads = self.N_heads
         N_layers = self.N_layers
         torso_feature_shape = self.torso_feature_shape
+        device = self.device
         
         batch_size = a.shape[0]
         
         x = self.linear_1(a.reshape(batch_size*N_steps, -1))           # [batch_size*N_steps, N_features*N_heads]
-        x = self.pos_embed(torch.arange(0, N_steps).repeat(batch_size).float().view((-1,1))) + x    # [batch_size*N_steps, N_features*N_heads]
+        x = self.pos_embed(torch.arange(0, N_steps).repeat(batch_size).float().view((-1,1)).to(device)) + x    # [batch_size*N_steps, N_features*N_heads]
         x = x.reshape(batch_size, N_steps, -1)          # [batch_size, N_steps, N_features*N_heads]
         
         for layer in range(N_layers):
@@ -385,6 +397,7 @@ class Net(nn.Module):
                  n_attentive=8,
                  N_heads=32,
                  N_features=64,
+                 device='cuda',
                  **kwargs):
         '''
         初始化部分
@@ -404,12 +417,14 @@ class Net(nn.Module):
         
         # Network.
         self.torso = Torso(S_size=S_size, T=T,
-                           n_attentive=n_attentive)
+                           n_attentive=n_attentive,
+                           device=device)
         self.policy_head = PolicyHead(N_steps=N_steps,
                                       N_logits=N_logits,
                                       N_samples=N_samples,
                                       N_heads=N_heads,
-                                      N_features=N_features)
+                                      N_features=N_features,
+                                      device=device)
         self.value_head = ValueHead(in_channel=N_features*N_heads)
         self.mode = "train"
         
@@ -547,23 +562,23 @@ class Net(nn.Module):
     
     
 if __name__ == '__main__':
-    # torso = Torso()
+    # torso = Torso().to('cuda')
     # test_input = [np.random.randint(-1, 1, (64, 7, 4, 4, 4)), np.random.randint(-1, 1, (64, 3))]
     # e = torso(test_input)
     # import pdb; pdb.set_trace()
     
-    # policy_head = PolicyHead()
-    # test_g = torch.tensor([0,1,2,3,4,5]).repeat(64).reshape(64, 6)
+    # policy_head = PolicyHead().to('cuda')
+    # test_g = torch.tensor([0,1,2,3,4,5]).repeat(64).reshape(64, 6).to('cuda')
     # train_output = policy_head([e, test_g])
     # import pdb; pdb.set_trace()
     
-    # value_head = ValueHead()
+    # value_head = ValueHead().to('cuda')
     # value_output = value_head([train_output[1]])
     # import pdb; pdb.set_trace()
     
-    net = Net()
+    net = Net().to('cuda')
     test_input = [np.random.randint(-1, 1, (64, 7, 4, 4, 4)), np.random.randint(-1, 1, (64, 3))]
-    test_g = torch.tensor([0,1,2,3,4,5]).repeat(64).reshape(64, 6)
+    test_g = torch.tensor([0,1,2,3,4,5]).repeat(64).reshape(64, 6).to('cuda')
     train_output = net([*test_input, test_g])  
     import pdb; pdb.set_trace()
     
