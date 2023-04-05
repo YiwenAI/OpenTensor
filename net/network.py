@@ -323,12 +323,16 @@ class PolicyHead(nn.Module):
             c = self.self_attentions[layer]([x,])       # [batch_size, N_steps, N_features*N_heads]
             if self.mode == 'train':
                 c = self.self_dropouts[layer](c)
+            else:
+                c = self.self_dropouts[layer].eval()(c)
             x = x + c                                   # [batch_size, N_steps, N_features*N_heads]
 
             x = self.cross_layer_norms[layer](x)        # [batch_size, N_steps, N_features*N_heads]
             c = self.cross_attentions[layer]([x, e])    # [batch_size, N_steps, N_features*N_heads]
             if self.mode == 'train':
                 c = self.cross_dropouts[layer](c)
+            else:
+                c = self.self_dropouts[layer].eval()(c)                
             x = x + c                                   # [batch_size, N_steps, N_features*N_heads]
         
         o = self.linear_2(self.relu(x.reshape(-1, N_features*N_heads))).reshape(batch_size, N_steps, N_logits)  # [batch_size, N_steps, N_logits]

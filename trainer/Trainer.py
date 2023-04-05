@@ -26,8 +26,8 @@ class Trainer():
                  S_size=4,
                  T=7,
                  coefficients=[0, 1, -1],
-                 batch_size=256,
-                 iters_n=200000,
+                 batch_size=1024,
+                 iters_n=50000,
                  exp_dir="exp",
                  exp_name="debug",
                  device="cuda",
@@ -52,9 +52,9 @@ class Trainer():
         
         self.optimizer = torch.optim.AdamW(net.parameters(),
                                            weight_decay=1e-5,
-                                           lr=1e-3)
+                                           lr=5e-3)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
-                                                         step_size=100000,
+                                                         step_size=40000,
                                                          gamma=.1)        
         self.batch_size = batch_size
         self.iters_n = iters_n
@@ -186,9 +186,11 @@ class Trainer():
         
         if resume is not None:
             old_iter = self.load_model(resume)
+        else:
+            old_iter = 0
         
         # 1. Get synthetic examples.
-        self.examples.extend(self.generate_synthetic_examples(samples_n=200000))
+        self.examples.extend(self.generate_synthetic_examples(samples_n=100000))
         
         for iter in tqdm(range(old_iter, self.iters_n)):
             # 2. self-play for data.
@@ -214,9 +216,9 @@ class Trainer():
             
             if iter % 10000 == 0:
                 ckpt_name = "it%07d.pth" % iter
-                self.save_model(ckpt_name)
+                self.save_model(ckpt_name, iter)
         
-        self.save_model("final.pth")
+        self.save_model("final.pth", iter)
             
             
     def play(self) -> list:
@@ -230,6 +232,7 @@ class Trainer():
         mcts = self.mcts
         env.reset()
         net.set_mode("infer")
+        net.eval()
         mcts.reset(env.cur_state)
         
         while True:
@@ -264,6 +267,7 @@ class Trainer():
         env.reset(no_base_change=True)
         net.set_mode("infer")
         net.set_samples_n(mcts_samples_n)
+        net.eval()
         mcts.reset(env.cur_state, simulate_times=mcts_simu_times)
         env.R_limit = step_limit + 1
         
@@ -326,8 +330,8 @@ if __name__ == '__main__':
     # import pdb; pdb.set_trace()
     # res = trainer.play()
     # res = trainer.generate_synthetic_examples()
-    trainer.learn()
-    import pdb; pdb.set_trace()
-    # trainer.load_model("./exp/debug/1680583349/ckpt/final.pth")
-    # trainer.infer()
+    # trainer.learn()
+    # import pdb; pdb.set_trace()
+    trainer.load_model("./exp/debug/1680630182/ckpt/it0020000.pth")
+    trainer.infer()
     
