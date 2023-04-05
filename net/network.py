@@ -275,18 +275,19 @@ class PolicyHead(nn.Module):
             a = -torch.ones((N_samples, N_steps)).long().to(device)       # a: {-1,0,1, ... N_logits-1} ^ [N_samples, N_steps]
             p = torch.ones((N_samples,)).float().to(device)
             
-            for s in range(N_samples):
-                for i in range(N_steps):
-                    o, z = self.predict_action_logits(one_hot(a[s], num_classes=N_logits).float().to(device)[None], e)    #FIXME: How to represent the start action?
-                    o, z = o[0], z[0]           # No use batch dim.  o: [N_steps, N_logits], z:[N_steps, N_features*N_heads]
-                    prob = F.softmax(o[i], dim=0)
-                    sampled_a = torch.multinomial(prob, 1)
-                    _p = prob[sampled_a]
-                    p[s] = p[s] * _p
-                    a[s, i] = sampled_a
-                    if i == 0:
-                        z1 = z[0]             # [N_features*N_heads]
+            # We sample N_samples batchly.
+            e = e.repeat(N_samples, 1, 1)       # e: [B, m, c], B=N_samples
+            for i in range(N_steps):
+                o, z = self.predict_action_logits(one_hot(a, num_classes=N_logits).float().to(device), e)
+                prob = F.softmax(o[:, i], dim=1)                   # o[:, i]: [N_samples, N_logits]
+                sampled_a = torch.multinomial(prob, 1).view(-1)    # sampled_a = [N_samples,]
+                for s in range(N_samples):
+                    p[s] = p[s] * prob[s, sampled_a[s]]
+                a[:, i] = sampled_a
                     
+                if i == 0:
+                    z1 = z[0, 0]              # [N_features*N_heads]
+                
             return a, p, z1                   # [N_samples, N_steps], [N_samples], [N_features*N_heads]
     
     

@@ -93,7 +93,8 @@ class Trainer():
     def generate_synthetic_examples(self,
                                     prob=[.8, .1, .1],
                                     samples_n=10000,
-                                    R_limit=12) -> list:
+                                    R_limit=12,
+                                    save_path=None) -> list:
         '''
         生成人工合成的Tensor examples
         返回: results
@@ -142,6 +143,10 @@ class Trainer():
                 reward = rewards[idx]
                 total_results.append([cur_state, action, reward])
                 
+                
+        if save_path is not None:
+            np.save(save_path, total_results)
+            
         return total_results
         
     
@@ -172,7 +177,8 @@ class Trainer():
         
         
     def learn(self,
-              resume=None):
+              resume=None,
+              example_path=None):
         '''
         训练的主函数
         '''
@@ -190,7 +196,10 @@ class Trainer():
             old_iter = 0
         
         # 1. Get synthetic examples.
-        self.examples.extend(self.generate_synthetic_examples(samples_n=100000))
+        if example_path is not None:
+            self.examples.extend(self.load_examples(example_path))
+        else:
+            self.examples.extend(self.generate_synthetic_examples(samples_n=100000))
         
         for iter in tqdm(range(old_iter, self.iters_n)):
             # 2. self-play for data.
@@ -254,11 +263,15 @@ class Trainer():
             
     
     def infer(self,
-              mcts_simu_times=400,
+              mcts_simu_times=10000,
               mcts_samples_n=16,
-              step_limit=12):
+              step_limit=12,
+              resume=None):
         
         actions = []
+        
+        if resume is not None:
+            self.load_model(resume)
         
         net = self.net
         env = self.env
@@ -309,6 +322,10 @@ class Trainer():
         self.optimizer.load_state_dict(ckpt['optimizer'])
         self.scheduler.load_state_dict(ckpt['scheduler'])
         return ckpt['iter']
+    
+    
+    def load_examples(self, example_path):
+        return np.load(example_path, allow_pickle=True)
         
             
 if __name__ == '__main__':
@@ -332,6 +349,10 @@ if __name__ == '__main__':
     # res = trainer.generate_synthetic_examples()
     # trainer.learn()
     # import pdb; pdb.set_trace()
-    trainer.load_model("./exp/debug/1680630182/ckpt/it0020000.pth")
-    trainer.infer()
-    
+    # trainer.load_model("./exp/debug/1680630182/ckpt/it0020000.pth")
+    # trainer.infer()
+    trainer.infer(resume="./exp/debug/1680673032/ckpt/it0030000.pth")
+    # import pdb; pdb.set_trace()
+    # trainer.generate_synthetic_examples(samples_n=100000, save_path="./data/100000_T5_scalar3.npy")
+    # trainer.learn(resume="./exp/debug/1680630182/ckpt/it0020000.pth",
+                  # example_path="./data/100000_T5_scalar3.npy")

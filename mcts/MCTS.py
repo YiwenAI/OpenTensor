@@ -80,8 +80,10 @@ class Node():
         scalars = np.array([self.depth, self.depth, self.depth]) #FIXME: Havn't decided the scalars.
         
         net.set_mode("infer")
-        output = net([tensors, scalars])
-        _, value, policy, prob = *net.value(output), *net.policy(output)    # policy: [N_samples, 3, S_size]
+        with torch.no_grad():
+            output = net([tensors, scalars])
+            _, value, policy, prob = *net.value(output), *net.policy(output)    # policy: [N_samples, 3, S_size]
+            del output, tensors, scalars
         policy = [canonicalize_action(action) for action in policy]
         
         # Get empirical policy probability.
@@ -204,9 +206,8 @@ class MCTS():
             if is_equal(child_action, action):
                 action_idx = idx
                 
-        self.root_node.children.append(copy.deepcopy(self.root_node.children[action_idx]))
-        self.root_node.children.reverse()
-        [self.root_node.children.pop() for _ in range(idx+1)]
+        # Delete other children and move.
+        self.root_node.children = [self.root_node.children[action_idx]]
         self.root_node = self.root_node.children[0]
         
         

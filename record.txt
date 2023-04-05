@@ -6,5 +6,15 @@
 
 need to check:
 	1. Causal mask?
-	2. 标准化的bug
-	3. 释放MCTS内存？
+	2. 标准化的bug（已解决）
+	3. 释放MCTS内存？（越运行GPU内存越少）、（通过删除其他子节点？）（似乎也已解决）
+	4. examples reformulate
+
+To do:
+	1. 基变换
+	2. random permutation
+	3. data aug
+	4. self-play train
+	5. dataloader
+	6. config文件
+	*7. infer时采样的batch操作？（似乎已解决）
