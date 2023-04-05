@@ -402,7 +402,13 @@ class Net(nn.Module):
                  n_attentive=8,
                  N_heads=32,
                  N_features=64,
+                 policy_layers=2,
                  device='cuda',
+                 channel=3,
+                 scalar_size=3,
+                 value_layers=3,
+                 inter_channel=512,
+                 out_channel=8,
                  **kwargs):
         '''
         初始化部分
@@ -423,14 +429,21 @@ class Net(nn.Module):
         # Network.
         self.torso = Torso(S_size=S_size, T=T,
                            n_attentive=n_attentive,
-                           device=device)
+                           device=device,
+                           channel=channel,
+                           scalar_size=scalar_size)
         self.policy_head = PolicyHead(N_steps=N_steps,
                                       N_logits=N_logits,
                                       N_samples=N_samples,
                                       N_heads=N_heads,
                                       N_features=N_features,
-                                      device=device)
-        self.value_head = ValueHead(in_channel=N_features*N_heads)
+                                      device=device,
+                                      N_layers=policy_layers,
+                                      torso_feature_shape=(3*S_size**2, channel))
+        self.value_head = ValueHead(in_channel=N_features*N_heads,
+                                    N_layers=value_layers,
+                                    inter_channel=inter_channel,
+                                    out_channel=out_channel)
         self.mode = "train"
         
     

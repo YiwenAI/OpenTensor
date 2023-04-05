@@ -1,0 +1,48 @@
+base:
+  S_size: 4
+  T: 5
+  coefficients: 
+    - 0
+    - 1
+    - -1
+  exp_dir: "exp"
+  exp_name: "debug"
+  device: "cuda"
+
+trainer:
+  lr: 0.005
+  weight_decay: 0.00001
+  gamma: .1
+  step_size: 40000
+  iters_n: 50000
+  batch_size: 1024
+  a_weight: .5
+  v_weight: .5
+
+net:
+  T: 5
+  S_size: 4
+  N_steps: 6
+  coefficients: 
+    - 0
+    - 1
+    - -1
+  N_samples: 32
+  n_attentive: 4
+  N_heads: 16
+  N_features: 16
+  device: 'cuda'
+  channel: 3
+  scalar_size: 3
+  policy_layers: 2
+  value_layers: 3
+  inter_channel: 512
+  out_channel: 8
+
+mcts:
+  simulate_times: 400
+
+env:
+  R_limit: 8
+  T: 5
+  S_size: 4

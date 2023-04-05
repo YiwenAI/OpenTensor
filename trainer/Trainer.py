@@ -1,4 +1,5 @@
 import time
+import yaml
 import random
 from tqdm import tqdm 
 import torch
@@ -31,7 +32,12 @@ class Trainer():
                  exp_dir="exp",
                  exp_name="debug",
                  device="cuda",
-                 **kwargs):
+                 lr=5e-3,
+                 weight_decay=1e-5,
+                 step_size=40000,
+                 gamma=.1,
+                 a_weight=.5,
+                 v_weight=.5):
         '''
         初始化一个Trainer.
         包含net, env和MCTS
@@ -47,15 +53,15 @@ class Trainer():
         
         self.entropy_loss = torch.nn.CrossEntropyLoss()
         self.quantile_loss = QuantileLoss()
-        self.a_weight = .5
-        self.v_weight = .5
+        self.a_weight = a_weight
+        self.v_weight = v_weight
         
         self.optimizer = torch.optim.AdamW(net.parameters(),
-                                           weight_decay=1e-5,
-                                           lr=5e-3)
+                                           weight_decay=weight_decay,
+                                           lr=lr)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
-                                                         step_size=40000,
-                                                         gamma=.1)        
+                                                         step_size=step_size,
+                                                         gamma=gamma)        
         self.batch_size = batch_size
         self.iters_n = iters_n
         
@@ -330,18 +336,17 @@ class Trainer():
             
 if __name__ == '__main__':
     
-    net = Net(N_samples=2,
-              T=5, N_steps=6,
-              n_attentive=4, N_heads=16, N_features=16,
-              device='cuda')
-    mcts = MCTS(simulate_times=20,
-                init_state=None)
-    env = Environment(S_size=4,
-                      R_limit=8, T=5)
+    conf_path = "./config/my_conf.yaml"
+    with open(conf_path, 'r', encoding="utf-8") as f:
+        kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
     
-    trainer = Trainer(net=net, env=env, mcts=mcts, T=5,
-                      save_dir="ckpt/debug",
-                      device='cuda')
+    net = Net(**kwargs["net"])
+    mcts = MCTS(**kwargs["mcts"],
+                init_state=None)
+    env = Environment(**kwargs["env"],
+                      init_state=None)
+    trainer = Trainer(**kwargs["trainer"],
+                      net=net, env=env, mcts=mcts)
     
     
     # import pdb; pdb.set_trace()
