@@ -24,3 +24,4 @@ To do:
 4/7:
 	1. 修改了attentive module（in parallel）
 	2. 修改了文件排版格式
+	3. 添加了dataloader（速度未有明显提升）

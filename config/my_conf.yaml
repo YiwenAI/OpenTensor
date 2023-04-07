@@ -1,15 +1,25 @@
-base:
-  S_size: 4
+# base:
+#   S_size: 4
+#   T: 5
+#   coefficients: 
+#     - 0
+#     - 1
+#     - -1
+#   exp_dir: "exp"
+#   exp_name: "debug"
+#   device: "cuda"
+
+trainer:
   T: 5
+  S_size: 4
   coefficients: 
     - 0
     - 1
-    - -1
+    - -1  
   exp_dir: "exp"
   exp_name: "debug"
-  device: "cuda"
+  device: "cuda"  
 
-trainer:
   lr: 0.005
   weight_decay: 0.00001
   gamma: .1
@@ -23,16 +33,17 @@ trainer:
 net:
   T: 5
   S_size: 4
-  N_steps: 6
   coefficients: 
     - 0
     - 1
     - -1
+  device: 'cuda'
+
+  N_steps: 6
   N_samples: 32
   n_attentive: 4
   N_heads: 16
   N_features: 16
-  device: 'cuda'
   channel: 3
   scalar_size: 3
   policy_layers: 2

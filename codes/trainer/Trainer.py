@@ -3,6 +3,7 @@ import yaml
 import random
 from tqdm import tqdm 
 import torch
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
@@ -14,6 +15,7 @@ from codes.trainer.loss import QuantileLoss
 from codes.env import *
 from codes.mcts import *
 from codes.utils import *
+from codes.dataset import *
 
 class Trainer():
     '''
@@ -73,29 +75,6 @@ class Trainer():
         
         self.device = device
         self.net.to(device)
-
-    
-    def sample_examples(self,
-                        samples_n) -> list:
-        '''
-        从数据库中采样
-        '''
-        sampled = random.sample(self.examples, samples_n)
-        # Merge example into a batch.
-        batch_tensor = np.stack([episode[0][0] for episode in sampled], axis=0)
-        batch_scalar = np.stack([episode[0][1] for episode in sampled], axis=0)
-        batch_action = np.stack([episode[1] for episode in sampled], axis=0)
-        batch_value = np.stack([episode[2] for episode in sampled], axis=0)
-        
-        return [batch_tensor, batch_scalar], batch_action, batch_value
-        
-    
-    def data_augment(self,
-                     examples):
-        '''
-        对采样得到的数据进行增强
-        '''
-        pass
     
     
     def generate_synthetic_examples(self,
@@ -207,13 +186,21 @@ class Trainer():
         if example_path is not None:
             self.examples.extend(self.load_examples(example_path))
         else:
-            self.examples.extend(self.generate_synthetic_examples(samples_n=100000))
+            self.examples.extend(self.generate_synthetic_examples(samples_n=3000))
+            
+        dataset = TupleDataset(examples=self.examples)
+        dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True, num_workers=4)
+        loader = iter(dataloader)
         
-        for iter in tqdm(range(old_iter, self.iters_n)):
+        for i in tqdm(range(old_iter, self.iters_n)):
             # 2. self-play for data.
             # self.examples.extend(self.play(self.net))
 
-            batch_example = self.sample_examples(samples_n=batch_size)
+            try:
+                batch_example = next(loader)
+            except StopIteration:
+                loader = iter(dataloader)
+                batch_example = next(loader)
 
             # 此处进行多进程优化
             # todo: 什么时候更新网络参数
@@ -224,18 +211,18 @@ class Trainer():
             scheduler.step()
             
             # 添加logger部分
-            if iter % 20 == 0:
+            if i % 20 == 0:
                 # print("Loss: %f, v_loss: %f, a_loss: %f" %
                 #       (loss.detach().cpu().item(), v_loss.detach().cpu().item(), a_loss.detach().cpu().item()))
-                self.log_writer.add_scalar("loss", loss.detach().cpu().item(), global_step=iter)
-                self.log_writer.add_scalar("v_loss", v_loss.detach().cpu().item(), global_step=iter)
-                self.log_writer.add_scalar("a_loss", a_loss.detach().cpu().item(), global_step=iter)
+                self.log_writer.add_scalar("loss", loss.detach().cpu().item(), global_step=i)
+                self.log_writer.add_scalar("v_loss", v_loss.detach().cpu().item(), global_step=i)
+                self.log_writer.add_scalar("a_loss", a_loss.detach().cpu().item(), global_step=i)
             
-            if iter % self.save_freq == 0:
-                ckpt_name = "it%07d.pth" % iter
-                self.save_model(ckpt_name, iter)
+            if i % self.save_freq == 0:
+                ckpt_name = "it%07d.pth" % i
+                self.save_model(ckpt_name, i)
         
-        self.save_model("final.pth", iter)
+        self.save_model("final.pth", i)
             
             
     def play(self) -> list:

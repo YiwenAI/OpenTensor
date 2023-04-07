@@ -57,7 +57,10 @@ class Torso(nn.Module):
         n_attentive = self.n_attentive
         
         input_t, input_s = x      # Tensor input and Scalar input.
-        input_t, input_s = torch.from_numpy(input_t).float().to(self.device), torch.from_numpy(input_s).float().to(self.device)
+        if not torch.is_tensor(input_t):
+            input_t, input_s = torch.from_numpy(input_t).float().to(self.device), torch.from_numpy(input_s).float().to(self.device)
+        else:
+            input_t, input_s = input_t.float().to(self.device), input_s.float().to(self.device)
         if self.mode == "infer":
             assert len(input_t.shape) == 4 and len(input_s.shape) == 1, \
                 "Infer mode does not support batch."

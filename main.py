@@ -31,7 +31,7 @@ if __name__ == '__main__':
     # import pdb; pdb.set_trace()
     # res = trainer.play()
     # res = trainer.generate_synthetic_examples()
-    # trainer.learn(example_path="./data/100000_T5_scalar3.npy")
+    # trainer.learn()
     # import pdb; pdb.set_trace()
     # trainer.load_model("./exp/debug/1680630182/ckpt/it0020000.pth")
     # trainer.infer()
