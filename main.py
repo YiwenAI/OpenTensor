@@ -1,8 +1,9 @@
-from env import Environment
-from agent import AlphaTensor
-from mcts import MCTS
-from net import Net
-from trainer import Trainer
+import yaml
+
+from codes.env import Environment
+from codes.mcts import MCTS
+from codes.net import Net
+from codes.trainer import Trainer
 
 
 def handle_config():
@@ -13,32 +14,29 @@ def handle_config():
 # todo: 建议写单元测试
 # todo: 有无高效mcts代码 如何进行分布式设计   AlphaZero MPI
 if __name__ == '__main__':
-
-    # argparse handle config
-    # 这样可以保留多套超参数
-    S_size = 4
-    R_limit = 8
-    mode = "train"
-    # and so on...
-
-    handle_config()
-
-    # Initialize
-    env = Environment(S_size, R_limit)  # 至少需要使用vec_env
-    # 注意，MCTS和环境绑定，vec_env应该在mcts内进行
-    # todo: check stable_baselines3 vec_env 机制
-    # todo: rllib 如何进行多进程训练 worker
     
-    net = Net()  # 正常torch写的网络，可以使用多套方案
-
-    # 建议将alphatensor和trainer合并
-    agent = AlphaTensor(net)
+    conf_path = "./config/my_conf.yaml"
+    with open(conf_path, 'r', encoding="utf-8") as f:
+        kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
     
-    trainer = Trainer(agent,
-                      env)
-
-    if mode == "train":
-        trainer.learn()
-        
-    elif mode == "test":
-        trainer.play()
+    net = Net(**kwargs["net"])
+    mcts = MCTS(**kwargs["mcts"],
+                init_state=None)
+    env = Environment(**kwargs["env"],
+                      init_state=None)
+    trainer = Trainer(**kwargs["trainer"],
+                      net=net, env=env, mcts=mcts)
+    
+    
+    # import pdb; pdb.set_trace()
+    # res = trainer.play()
+    # res = trainer.generate_synthetic_examples()
+    # trainer.learn(example_path="./data/100000_T5_scalar3.npy")
+    # import pdb; pdb.set_trace()
+    # trainer.load_model("./exp/debug/1680630182/ckpt/it0020000.pth")
+    # trainer.infer()
+    # trainer.infer(resume="./exp/debug/1680764978/ckpt/it0002000.pth")
+    # import pdb; pdb.set_trace()
+    # trainer.generate_synthetic_examples(samples_n=100000, save_path="./data/100000_T5_scalar3.npy")
+    trainer.learn(resume=None,
+                  example_path="./data/100000_T5_scalar3.npy")

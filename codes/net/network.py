@@ -8,9 +8,9 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join("..")))
 sys.path.append(os.path.abspath(os.path.join(".")))
-from env import *
-from mcts import *
-from utils import *
+from codes.env import *
+from codes.mcts import *
+from codes.utils import *
 
 # Input:
 #   Tensors of shape of [B,T,S,S,S]. First one is current tensor.
@@ -107,12 +107,18 @@ class AttentiveModes(nn.Module):
         self.channel = channel
         self.S_size = S_size
         
-        self.attentions = nn.Sequential(*[Attention(channel,
-                                          channel,
-                                          2*S_size,
-                                          2*S_size,
-                                          False,
-                                          device=device) for _ in range(S_size)])
+        # self.attentions = nn.Sequential(*[Attention(channel,
+        #                                   channel,
+        #                                   2*S_size,
+        #                                   2*S_size,
+        #                                   False,
+        #                                   device=device) for _ in range(S_size)])
+        
+        self.attention = Attention(channel,
+                                   channel,
+                                   2*S_size,
+                                   2*S_size,
+                                   False, device=device)
         
     def forward(self, x):
         
@@ -120,14 +126,21 @@ class AttentiveModes(nn.Module):
         #   [x1, x2, x3]. Each of them is shaped of [B, S, S, c]
         
         S_size = self.S_size
+        channel = self.channel
         
         for m1, m2 in [(0,1), (2,0), (1,2)]:
-            a = torch.cat([x[m1], x[m2].transpose(1,2)], axis=2)
-            for idx in range(S_size):
-                c = self.attentions[idx]([a[:,idx],])
-                x[m1][:,idx] = c[:, :S_size, :]
-                x[m2][:,idx] = c[:, S_size:, :]
-        
+            a = torch.cat([x[m1], x[m2].transpose(1,2)], axis=2)      # a: [B, S, 2S, c]
+            # for idx in range(S_size):            #FIXME: Parallel loop?
+            #     c = self.attentions[idx]([a[:,idx],])
+            #     x[m1][:,idx] = c[:, :S_size, :]
+            #     x[m2][:,idx] = c[:, S_size:, :]
+
+            a = a.reshape((-1, 2*S_size, channel))
+            c = self.attention([a, ])                                # c: [B*S, 2S, c]
+            c = c.reshape((-1, S_size, 2*S_size, channel))           # c: [B, S, 2S, c]
+            x[m1] = c[:, :, :S_size, :]
+            x[m2] = c[:, :, S_size:, :]
+            
         return x
             
     

@@ -15,6 +15,12 @@ To do:
 	2. random permutation
 	3. data aug
 	4. self-play train
-	5. dataloader
-	6. config文件
+	5. dataloader  （暂时忽略）
+	6. config文件 （简单的已解决）
 	*7. infer时采样的batch操作？（似乎已解决）
+	8. 输入scalar时应该如何输入？
+
+
+4/7:
+	1. 修改了attentive module（in parallel）
+	2. 修改了文件排版格式

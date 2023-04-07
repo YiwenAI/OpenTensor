@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join("..")))
 sys.path.append(os.path.abspath(os.path.join(".")))
-from utils import *
+from codes.utils import *
 
 # todo: 建议写成gym的标准形式 init reset step
 # todo: 可以少写函数 多写变量

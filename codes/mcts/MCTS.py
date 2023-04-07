@@ -8,9 +8,9 @@ import os
 import copy
 sys.path.append(os.path.abspath(os.path.join("..")))
 sys.path.append(os.path.abspath(os.path.join(".")))
-from env import Environment
-from net import Net
-from utils import *
+from codes.env import Environment
+from codes.net import Net
+from codes.utils import *
 
 
 class Node():

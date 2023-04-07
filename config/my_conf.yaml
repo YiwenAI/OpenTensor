@@ -14,10 +14,11 @@ trainer:
   weight_decay: 0.00001
   gamma: .1
   step_size: 40000
-  iters_n: 50000
+  iters_n: 3000
   batch_size: 1024
   a_weight: .5
   v_weight: .5
+  save_freq: 500
 
 net:
   T: 5

@@ -10,10 +10,10 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join("..")))
 sys.path.append(os.path.abspath(os.path.join(".")))
-from loss import QuantileLoss
-from env import *
-from mcts import *
-from utils import *
+from codes.trainer.loss import QuantileLoss
+from codes.env import *
+from codes.mcts import *
+from codes.utils import *
 
 class Trainer():
     '''
@@ -37,7 +37,8 @@ class Trainer():
                  step_size=40000,
                  gamma=.1,
                  a_weight=.5,
-                 v_weight=.5):
+                 v_weight=.5,
+                 save_freq=10000):
         '''
         初始化一个Trainer.
         包含net, env和MCTS
@@ -64,6 +65,7 @@ class Trainer():
                                                          gamma=gamma)        
         self.batch_size = batch_size
         self.iters_n = iters_n
+        self.save_freq = save_freq
         
         self.exp_dir = exp_dir
         self.save_dir = os.path.join(exp_dir, exp_name, str(int(time.time())))  
@@ -229,7 +231,7 @@ class Trainer():
                 self.log_writer.add_scalar("v_loss", v_loss.detach().cpu().item(), global_step=iter)
                 self.log_writer.add_scalar("a_loss", a_loss.detach().cpu().item(), global_step=iter)
             
-            if iter % 10000 == 0:
+            if iter % self.save_freq == 0:
                 ckpt_name = "it%07d.pth" % iter
                 self.save_model(ckpt_name, iter)
         
@@ -352,12 +354,12 @@ if __name__ == '__main__':
     # import pdb; pdb.set_trace()
     # res = trainer.play()
     # res = trainer.generate_synthetic_examples()
-    # trainer.learn()
+    # trainer.learn(example_path="./data/100000_T5_scalar3.npy")
     # import pdb; pdb.set_trace()
     # trainer.load_model("./exp/debug/1680630182/ckpt/it0020000.pth")
     # trainer.infer()
-    trainer.infer(resume="./exp/debug/1680673032/ckpt/it0030000.pth")
+    # trainer.infer(resume="./exp/debug/1680764978/ckpt/it0002000.pth")
     # import pdb; pdb.set_trace()
     # trainer.generate_synthetic_examples(samples_n=100000, save_path="./data/100000_T5_scalar3.npy")
-    # trainer.learn(resume="./exp/debug/1680630182/ckpt/it0020000.pth",
-                  # example_path="./data/100000_T5_scalar3.npy")
+    trainer.learn(resume=None,
+                  example_path="./data/100000_T5_scalar3.npy")
