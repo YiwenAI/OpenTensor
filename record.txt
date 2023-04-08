@@ -9,19 +9,23 @@ need to check:
 	2. 标准化的bug（已解决）
 	3. 释放MCTS内存？（越运行GPU内存越少）、（通过删除其他子节点？）（似乎也已解决）
 	4. examples reformulate
+	5. 基变换和随机符号置换
 
 To do:
 	1. 基变换
 	2. random permutation
 	3. data aug
-	4. self-play train
+	4. self-play train （数据格式）
 	5. dataloader  （暂时忽略）
 	6. config文件 （简单的已解决）
 	*7. infer时采样的batch操作？（似乎已解决）
 	8. 输入scalar时应该如何输入？
+	9. 同时进行n棵树并行？（多线程）
 
 
 4/7:
 	1. 修改了attentive module（in parallel）
 	2. 修改了文件排版格式
 	3. 添加了dataloader（速度未有明显提升）
+		跟数据formulate有关的都放在dataset里面！
+	4. 完成了随机符号置换（需要debug）

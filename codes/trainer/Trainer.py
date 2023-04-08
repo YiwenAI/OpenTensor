@@ -1,6 +1,7 @@
 import time
 import yaml
 import random
+import shutil
 from tqdm import tqdm 
 import torch
 from torch.utils.data import DataLoader
@@ -40,7 +41,10 @@ class Trainer():
                  gamma=.1,
                  a_weight=.5,
                  v_weight=.5,
-                 save_freq=10000):
+                 save_freq=10000,
+                 self_play_freq=10,
+                 self_play_buffer=100000,
+                 grad_clip=4.0):
         '''
         初始化一个Trainer.
         包含net, env和MCTS
@@ -52,7 +56,8 @@ class Trainer():
         self.T = T
         self.coefficients = coefficients
         
-        self.examples = []      # 数据库
+        self.self_examples = []
+        self.synthetic_examples = []
         
         self.entropy_loss = torch.nn.CrossEntropyLoss()
         self.quantile_loss = QuantileLoss()
@@ -67,7 +72,10 @@ class Trainer():
                                                          gamma=gamma)        
         self.batch_size = batch_size
         self.iters_n = iters_n
+        self.grad_clip = grad_clip
         self.save_freq = save_freq
+        self.self_play_freq = self_play_freq
+        self.self_play_buffer = self_play_buffer
         
         self.exp_dir = exp_dir
         self.save_dir = os.path.join(exp_dir, exp_name, str(int(time.time())))  
@@ -145,9 +153,8 @@ class Trainer():
         
         # Groundtruth.
         s, a_gt, v_gt = batch_example     # s: [tensor, scalar]
-        a_gt = [canonicalize_action(a) for a in a_gt]
-        a_gt = torch.tensor(np.stack([self.net.action_to_logits(a) for a in a_gt], axis=0)).long().to(self.device)
-        v_gt = torch.tensor(v_gt).float().to(self.device)
+        a_gt = a_gt.long().to(self.device)
+        v_gt = v_gt.float().to(self.device)
         
         # Network infer.
         self.net.set_mode("train")
@@ -172,41 +179,68 @@ class Trainer():
         optimizer = self.optimizer
         scheduler = self.scheduler    
         batch_size = self.batch_size
+        self_play_freq = self.self_play_freq
+        self_play_buffer = self.self_play_buffer
         
         os.makedirs(self.save_dir)
         os.makedirs(self.log_dir)
         self.log_writer = SummaryWriter(self.log_dir)
         
         if resume is not None:
+            # Load model.
             old_iter = self.load_model(resume)
+            # Copy log file.
+            old_exp_dir = os.path.join(os.path.dirname(resume), '..')
+            # os.system("cp -r %s %s" % (os.path.join(old_exp_dir, 'log', '*'), self.log_dir))
+            for log_f in os.listdir(os.path.join(old_exp_dir, "log")):
+                shutil.copy(os.path.join(old_exp_dir, "log", log_f), self.log_dir)
         else:
             old_iter = 0
         
         # 1. Get synthetic examples.
         if example_path is not None:
-            self.examples.extend(self.load_examples(example_path))
+            self.synthetic_examples.extend(self.load_examples(example_path))
         else:
-            self.examples.extend(self.generate_synthetic_examples(samples_n=3000))
-            
-        dataset = TupleDataset(examples=self.examples)
-        dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True, num_workers=4)
+            self.synthetic_examples.extend(self.generate_synthetic_examples(samples_n=3000))
+        
+        # Dataloader.
+        dataset = TupleDataset(S_size=self.S_size,
+                               N_steps=self.net.N_steps,
+                               coefficients=self.coefficients,
+                               self_examples=self.self_examples,
+                               synthetic_examples=self.synthetic_examples)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
         loader = iter(dataloader)
+        epoch_ct = 0
         
         for i in tqdm(range(old_iter, self.iters_n)):
+            
             # 2. self-play for data.
-            # self.examples.extend(self.play(self.net))
+            # if i % self_play_freq == 0:
+            #     self.self_examples.extend(self.play(200 if i < 50000 else 800))
 
             try:
                 batch_example = next(loader)
             except StopIteration:
+                # self.self_examples = self.self_examples[-self_play_buffer:]
+                # dataset = TupleDataset(S_size=self.S_size,
+                #                        N_steps=self.net.N_steps,
+                #                        coefficients=self.coefficients,
+                #                        self_examples=self.self_examples,
+                #                        synthetic_examples=self.synthetic_examples)
+                # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
                 loader = iter(dataloader)
                 batch_example = next(loader)
+                print("Epoch: %d finish." % epoch_ct)
+                epoch_ct += 1
 
             # 此处进行多进程优化
             # todo: 什么时候更新网络参数
             optimizer.zero_grad()
             loss, v_loss, a_loss = self.learn_one_batch(batch_example)
             loss.backward()
+            torch.nn.utils.clip_grad_norm(self.net.parameters(),
+                                          max_norm=self.grad_clip)
             optimizer.step()
             scheduler.step()
             
@@ -225,7 +259,8 @@ class Trainer():
         self.save_model("final.pth", i)
             
             
-    def play(self) -> list:
+    def play(self,
+             simu_times=200) -> list:
         '''
         进行一次Tensor Game, 得到游玩记录
         返回: results
@@ -237,7 +272,7 @@ class Trainer():
         env.reset()
         net.set_mode("infer")
         net.eval()
-        mcts.reset(env.cur_state)
+        mcts.reset(env.cur_state, simulate_times=simu_times)
         
         while True:
             
@@ -347,6 +382,7 @@ if __name__ == '__main__':
     # trainer.infer()
     # trainer.infer(resume="./exp/debug/1680764978/ckpt/it0002000.pth")
     # import pdb; pdb.set_trace()
-    # trainer.generate_synthetic_examples(samples_n=100000, save_path="./data/100000_T5_scalar3.npy")
-    trainer.learn(resume=None,
-                  example_path="./data/100000_T5_scalar3.npy")
+    trainer.generate_synthetic_examples(samples_n=3000, save_path="./data/3000_T5_scalar3.npy")
+    # trainer.learn(resume=None,
+    #               example_path="./data/100000_T5_scalar3.npy")
+    # trainer.learn(resume=None)

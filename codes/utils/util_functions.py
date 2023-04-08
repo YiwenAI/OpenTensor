@@ -1,6 +1,11 @@
 import numpy as np
 import torch
 
+'''
+Note that:
+    All function use np as input and output.
+'''
+
 def numpy_cvt(a):
     if torch.is_tensor(a):
         return a.numpy()
@@ -22,7 +27,6 @@ def is_equal(a, b):
     return np.all((a - b) == 0)
 
 def canonicalize_action(action):
-    action = numpy_cvt(action)
     u, v, w = action
     for e in u:
         if e != 0:
@@ -50,3 +54,8 @@ def one_hot(a_s, num_classes):
                     continue
                 result[batch, idx, a] = 1
         return result
+    
+def change_basis_tensor(tensor,
+                        trans_mat):
+    return np.einsum('ij, kl, mn, jln -> ijk',
+                     trans_mat, trans_mat, trans_mat, tensor)

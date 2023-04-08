@@ -20,15 +20,18 @@ trainer:
   exp_name: "debug"
   device: "cuda"  
 
-  lr: 0.005
+  lr: 0.0005
   weight_decay: 0.00001
   gamma: .1
-  step_size: 40000
-  iters_n: 3000
-  batch_size: 1024
+  step_size: 60000
+  iters_n: 100000
+  batch_size: 64
   a_weight: .5
   v_weight: .5
-  save_freq: 500
+  save_freq: 10000
+  self_play_buffer: 100000
+  self_play_freq: 10
+  grad_clip: 4.0
 
 net:
   T: 5

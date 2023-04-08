@@ -555,7 +555,10 @@ class Net(nn.Module):
         for token in action:         # Get one logit.
             # token = token.to_list()
             logit = 0
-            token = token[::-1]
+            if torch.is_tensor(token):
+                token = torch.flip(token, dims=(0,))
+            else:
+                token = token[::-1]
             for idx, v in enumerate(token):
                 logit += coefficients.index(v) * (len(coefficients) ** idx)
             logits.append(logit)
