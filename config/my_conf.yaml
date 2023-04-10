@@ -32,6 +32,7 @@ trainer:
   self_play_buffer: 100000
   self_play_freq: 10
   grad_clip: 4.0
+  val_freq: 1000
 
 net:
   T: 5
@@ -42,7 +43,7 @@ net:
     - -1
   device: 'cuda'
 
-  N_steps: 6
+  N_steps: 3
   N_samples: 32
   n_attentive: 4
   N_heads: 16
@@ -51,7 +52,7 @@ net:
   scalar_size: 3
   policy_layers: 2
   value_layers: 3
-  inter_channel: 512
+  inter_channel: 256
   out_channel: 8
 
 mcts:

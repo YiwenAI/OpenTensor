@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 import math
+import networkx as nx
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 import sys
@@ -105,7 +107,7 @@ class Node():
                         ct += 1
                         rec[i] = True
                 pi.append(ct / N_samples)
-                
+        import pdb; pdb.set_trace()
         self.actions = actions
         self.pi = pi
         self.children_n = len(actions)
@@ -223,6 +225,28 @@ class MCTS():
                             parent=None,
                             pre_action=None,
                             pre_action_idx=None)
+        
+        
+    def visualize(self):
+        '''
+        visualize the tree.
+        '''
+        # Create a graph.
+        graph = nx.DiGraph()
+        close_set = [self.root_node]
+        
+        while close_set != []:
+            node = close_set.pop()
+            if not node.is_leaf:
+                [graph.add_edge(
+                    node,
+                    child
+                ) for child in node.children]
+                [close_set.append(child) for child in node.children]
+                
+        nx.draw(graph, with_labels=True, font_weight='bold')
+        raise NotImplementedError
+        plt.show()
     
     
     

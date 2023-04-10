@@ -21,6 +21,8 @@ To do:
 	*7. infer时采样的batch操作？（似乎已解决）
 	8. 输入scalar时应该如何输入？
 	9. 同时进行n棵树并行？（多线程）
+	10. transition table
+	11. 探索因子温度
 
 
 4/7:
@@ -29,3 +31,10 @@ To do:
 	3. 添加了dataloader（速度未有明显提升）
 		跟数据formulate有关的都放在dataset里面！
 	4. 完成了随机符号置换（需要debug）
+4/9:
+	1. 添加了val
+	2. 推测：是infer出了问题 -- Causal mask是否需要检查？？ 采样是否要检查？？position embedding？？
+	3. 对照transformer检查代码
+4/10:
+	1. 添加了启动子
+		（N_steps+1, N_logits+1，用最后一位Logit来表示启动子；训练时对整个N_steps+1进行loss计算；infer时只对非启动子进行采样）

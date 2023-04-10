@@ -1,10 +1,11 @@
 import time
 import yaml
+import copy
 import random
 import shutil
 from tqdm import tqdm 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
@@ -44,7 +45,9 @@ class Trainer():
                  save_freq=10000,
                  self_play_freq=10,
                  self_play_buffer=100000,
-                 grad_clip=4.0):
+                 grad_clip=4.0,
+                 val_freq=2000,
+                 all_kwargs=None):
         '''
         初始化一个Trainer.
         包含net, env和MCTS
@@ -76,6 +79,7 @@ class Trainer():
         self.save_freq = save_freq
         self.self_play_freq = self_play_freq
         self.self_play_buffer = self_play_buffer
+        self.val_freq = val_freq
         
         self.exp_dir = exp_dir
         self.save_dir = os.path.join(exp_dir, exp_name, str(int(time.time())))  
@@ -83,6 +87,8 @@ class Trainer():
         
         self.device = device
         self.net.to(device)
+        
+        self.all_kwargs = all_kwargs
     
     
     def generate_synthetic_examples(self,
@@ -163,11 +169,47 @@ class Trainer():
         
         # Losses.
         v_loss = self.quantile_loss(q, v_gt)    # v_gt: [batch_size,]
-        o, a_gt = o.reshape((-1, o.shape[-1])), a_gt.reshape((-1,))    # o: [batch_size*N_steps, N_logits]
-        a_loss = self.entropy_loss(o, a_gt)     # a_gt: [batch_size*N_steps]
+        o = o.transpose(1,2)                    # o: [batch_size, N_logits, N_steps]
+        a_loss = self.entropy_loss(o, a_gt)     # a_gt: [batch_size, N_steps], o: [batch_size, N_logits, N_steps]
         loss = self.v_weight * v_loss + self.a_weight * a_loss
 
         return loss, v_loss, a_loss
+    
+    
+    def val_one_episode(self,
+                        episode):
+        '''
+        对一个元组进行验证, 打印输出
+        '''
+        
+        state, action, reward = episode
+        tensor, scalar = state
+        
+        self.net.set_mode("infer")
+        self.net.set_samples_n(4)
+        output = self.net(state)
+        q, v = self.net.value(output)
+        policy, p = self.net.policy(output)
+        
+        self.net.set_mode("train")
+        tensor, scalar, action = tensor[None], scalar[None], action[None]
+        state = [tensor, scalar]
+        o, _ = self.net([*state, action])
+        o = o.detach().cpu().numpy()[0]         # o: [N_steps, N_logits]
+        
+        log_txt = "\n".join(
+            ["\nGt action: \n", str(self.net.logits_to_action(action[0])),
+             "\nGt logit: \n", str(action[0]),
+            "\nInfer actions: \n", str(policy),
+            "\nprob: \n", str(p),
+            "\nGt value: \n", str(reward),
+            "\nInfer value: \n", str(v),
+            "\nquantile: \n", str(q),
+            *["\nTop 5 logit for step %d\n: " % step + str(np.argsort(o[step])[-5:]) for step in range(self.net.N_steps+1)]]
+        )
+        
+        return log_txt
+        
         
         
     def learn(self,
@@ -182,9 +224,16 @@ class Trainer():
         self_play_freq = self.self_play_freq
         self_play_buffer = self.self_play_buffer
         
+        # Tensorboard.
         os.makedirs(self.save_dir)
         os.makedirs(self.log_dir)
         self.log_writer = SummaryWriter(self.log_dir)
+        
+        # Save config.
+        all_kwargs = self.all_kwargs
+        cfg_path = os.path.join(self.save_dir, "config.yaml")
+        with open(cfg_path, 'w') as f:
+            yaml.dump(all_kwargs, f)
         
         if resume is not None:
             # Load model.
@@ -255,6 +304,11 @@ class Trainer():
             if i % self.save_freq == 0:
                 ckpt_name = "it%07d.pth" % i
                 self.save_model(ckpt_name, i)
+                
+            if i % self.val_freq == 0:
+                val_episode = dataset[random.randint(0, len(dataset)-1)]
+                log_txt = self.val_one_episode(val_episode)
+                self.log_writer.add_text("Infer", log_txt, global_step=i)
         
         self.save_model("final.pth", i)
             
@@ -296,7 +350,8 @@ class Trainer():
               mcts_simu_times=10000,
               mcts_samples_n=16,
               step_limit=12,
-              resume=None):
+              resume=None,
+              vis=False):
         
         actions = []
         
@@ -319,6 +374,8 @@ class Trainer():
             print(env.cur_state)
             
             action, actions, pi = mcts(env.cur_state, net)
+            if vis:
+                mcts.visualize()
             print("We choose action(step%d):" % step)
             print(action)
             terminate_flag = env.step(action)                            # Will change self.cur_state. 
@@ -370,7 +427,8 @@ if __name__ == '__main__':
     env = Environment(**kwargs["env"],
                       init_state=None)
     trainer = Trainer(**kwargs["trainer"],
-                      net=net, env=env, mcts=mcts)
+                      net=net, env=env, mcts=mcts,
+                      all_kwargs=kwargs)
     
     
     # import pdb; pdb.set_trace()

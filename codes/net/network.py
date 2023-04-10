@@ -204,11 +204,14 @@ class Attention(nn.Module):
         k_s = self.W_K(y_norm).view(batch_size, -1, N_heads, d).transpose(1, 2)   # [batch_size, N_heads, N_y, d]
         v_s = self.W_V(y_norm).view(batch_size, -1, N_heads, d).transpose(1, 2)   # [batch_size, N_heads, N_y, d]
         
-        scores = torch.matmul(q_s, k_s.transpose(-1, -2)) / np.sqrt(d)    # [batch_size, N_heads, N_x, N_y]
+        scores = torch.matmul(q_s, k_s.transpose(-1, -2)) / np.sqrt(d)            # [batch_size, N_heads, N_x, N_y]
         if self.causal_mask:
-            mask = torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)).float().to(self.device)
-            scores = scores * mask
-            
+            # mask = torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)).float().to(self.device)
+            # mask = torch.from_numpy(np.tril(np.ones([batch_size, N_heads, N_x, N_y]), k=0)).float().to(self.device)
+            mask = (torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)) == 0).to(self.device)
+            scores = scores.masked_fill(mask == 0, -1e9)
+        scores = F.softmax(scores, dim=-1)
+        
         o_s = torch.matmul(scores, v_s)   # [batch_size, N_heads, N_x, d]
         o_s = o_s.transpose(1, 2).contiguous().view(batch_size, -1, N_heads*d)          # [batch_size, N_x, N_heads*d]
         x = x.reshape(batch_size*N_x, -1) + self.linear_1(o_s.reshape(-1, N_heads*d))   # [batch_size*N_x, c_x]
@@ -242,20 +245,20 @@ class PolicyHead(nn.Module):
         self.mode = mode
         self.device = device
         
-        self.linear_1 = nn.Linear(N_logits, N_features * N_heads)
+        self.linear_1 = nn.Linear(N_logits+1, N_features * N_heads)
         self.pos_embed = nn.Linear(1, N_features * N_heads)
         self.self_layer_norms = nn.Sequential(*[nn.LayerNorm((N_features * N_heads)) for _ in range(N_layers)])
         self.cross_layer_norms = nn.Sequential(*[nn.LayerNorm(( N_features * N_heads)) for _ in range(N_layers)])   #FIXME: How to choose layer norm's channel?
         self.self_attentions = nn.Sequential(*[Attention(x_channel=N_features * N_heads,
                                                y_channel=N_features * N_heads,
-                                               N_x=N_steps,
-                                               N_y=N_steps,
+                                               N_x=N_steps+1,
+                                               N_y=N_steps+1,
                                                causal_mask=True,
                                                N_heads=N_heads,
                                                device=device) for _ in range(N_layers)])
         self.cross_attentions = nn.Sequential(*[Attention(x_channel=N_features * N_heads,
                                                 y_channel=torso_feature_shape[1],
-                                                N_x=N_steps,
+                                                N_x=N_steps+1,
                                                 N_y=torso_feature_shape[0],
                                                 causal_mask=False,
                                                 N_heads=N_heads,
@@ -263,7 +266,7 @@ class PolicyHead(nn.Module):
         self.self_dropouts = nn.Sequential(*[nn.Dropout() for _ in range(N_layers)])
         self.cross_dropouts = nn.Sequential(*[nn.Dropout() for _ in range(N_layers)])
         self.relu = nn.ReLU()
-        self.linear_2 = nn.Linear(N_features * N_heads, N_logits)
+        self.linear_2 = nn.Linear(N_features * N_heads, N_logits+1)
         
     
     def forward(self, x):
@@ -280,31 +283,35 @@ class PolicyHead(nn.Module):
         assert self.mode in ['train', 'infer']
         
         if self.mode == 'train':
-            e, g = x                            # g: {0,1,... N_logits-1} ^ [B, N_steps], [B, N_steps]
-            g_onehot = one_hot(g, num_classes=N_logits).float().to(device)     # [B, N_steps, N_logits]
+            e, g = x                            # g: {0,1,... N_logits-1} ^ [B, N_steps+1], [B, N_steps+1]
+            if not torch.is_tensor(g):
+                g = torch.tensor(g).long()
+            g_onehot = one_hot(g, num_classes=N_logits).float().to(device)     # [B, N_steps+1, N_logits+1]
             #FIXME: We haven't applied "shift" operation.
-            o, z = self.predict_action_logits(g_onehot, e)    # o: [B, N_steps, N_logits]; z: [B, N_steps, N_features*N_heads]
-            return o, z[:, 0]                   # o: [B, N_steps, N_logits]; z[:, 0]: [B, N_features*N_heads]
+            # # Apply "start" sign.
+            # g_onehot = torch.cat([torch.zeros_like(g_onehot[:, :1, :]), g_onehot], dim=1)    # [B, N_steps+1, N_logits+1]
+            o, z = self.predict_action_logits(g_onehot, e)    # o: [B, N_steps+1, N_logits+1]; z: [B, N_steps+1, N_features*N_heads]
+            return o, z[:, 0]                                 # o: [B, N_steps+1, N_logits+1]; z[:, 0]: [B, N_features*N_heads]
         
         elif self.mode == 'infer':
             e = x[0]                            # e: [B, m, c], B=1
-            a = -torch.ones((N_samples, N_steps)).long().to(device)       # a: {-1,0,1, ... N_logits-1} ^ [N_samples, N_steps]
+            a = -torch.ones((N_samples, N_steps+1)).long().to(device)       # a: {-1,0,1, ... N_logits-1} ^ [N_samples, N_steps+1]
             p = torch.ones((N_samples,)).float().to(device)
             
             # We sample N_samples batchly.
             e = e.repeat(N_samples, 1, 1)       # e: [B, m, c], B=N_samples
-            for i in range(N_steps):
+            for i in range(1, N_steps+1):
                 o, z = self.predict_action_logits(one_hot(a, num_classes=N_logits).float().to(device), e)
-                prob = F.softmax(o[:, i], dim=1)                   # o[:, i]: [N_samples, N_logits]
+                prob = F.softmax(o[:, i, :-1], dim=1)                   # o[:, i, :-1]: [N_samples, N_logits]
                 sampled_a = torch.multinomial(prob, 1).view(-1)    # sampled_a = [N_samples,]
                 for s in range(N_samples):
                     p[s] = p[s] * prob[s, sampled_a[s]]
                 a[:, i] = sampled_a
                     
-                if i == 0:
-                    z1 = z[0, 0]              # [N_features*N_heads]
+                if i == 1:
+                    z1 = z[0, 0].clone()              # [N_features*N_heads]
                 
-            return a, p, z1                   # [N_samples, N_steps], [N_samples], [N_features*N_heads]
+            return a, p, z1                           # [N_samples, N_steps+1], [N_samples], [N_features*N_heads]
     
     
     def set_mode(self, mode):
@@ -331,9 +338,9 @@ class PolicyHead(nn.Module):
         
         batch_size = a.shape[0]
         
-        x = self.linear_1(a.reshape(batch_size*N_steps, -1))           # [batch_size*N_steps, N_features*N_heads]
-        x = self.pos_embed(torch.arange(0, N_steps).repeat(batch_size).float().view((-1,1)).to(device)) + x    # [batch_size*N_steps, N_features*N_heads]
-        x = x.reshape(batch_size, N_steps, -1)          # [batch_size, N_steps, N_features*N_heads]
+        x = self.linear_1(a.reshape(batch_size*(N_steps+1), -1))           # [batch_size*N_steps, N_features*N_heads]
+        x = self.pos_embed(torch.arange(0, (N_steps+1)).repeat(batch_size).float().view((-1,1)).to(device)) + x    # [batch_size*N_steps, N_features*N_heads]
+        x = x.reshape(batch_size, (N_steps+1), -1)          # [batch_size, N_steps, N_features*N_heads]
         
         for layer in range(N_layers):
             x = self.self_layer_norms[layer](x)         # [batch_size, N_steps, N_features*N_heads]
@@ -352,7 +359,7 @@ class PolicyHead(nn.Module):
                 c = self.self_dropouts[layer].eval()(c)                
             x = x + c                                   # [batch_size, N_steps, N_features*N_heads]
         
-        o = self.linear_2(self.relu(x.reshape(-1, N_features*N_heads))).reshape(batch_size, N_steps, N_logits)  # [batch_size, N_steps, N_logits]
+        o = self.linear_2(self.relu(x.reshape(-1, N_features*N_heads))).reshape(batch_size, (N_steps+1), N_logits+1)  # [batch_size, N_steps, N_logits]
         
         return o, x           
     
@@ -526,8 +533,10 @@ class Net(nn.Module):
         token_len = self.token_len
         coefficients = self.coefficients
         action = []
-        for logit in logits:                       # Get one action
+        for logit in logits[1:]:                   # Get one action
             token = []
+            if logit == self.N_logits:
+                raise 
             for _ in range(token_len):             # Get one token
                 idx = logit % len(coefficients)
                 token.append(coefficients[idx])
@@ -551,7 +560,7 @@ class Net(nn.Module):
         action = action.reshape((-1, token_len))     # [N_steps, token_len]
         
         # Get logits.
-        logits = []
+        logits = [self.N_logits]
         for token in action:         # Get one logit.
             # token = token.to_list()
             logit = 0
@@ -613,23 +622,24 @@ if __name__ == '__main__':
     # value_output = value_head([train_output[1]])
     # import pdb; pdb.set_trace()
     
-    net = Net().to('cuda')
-    test_input = [np.random.randint(-1, 1, (64, 7, 4, 4, 4)), np.random.randint(-1, 1, (64, 3))]
-    test_g = torch.tensor([0,1,2,3,4,5]).repeat(64).reshape(64, 6).to('cuda')
-    train_output = net([*test_input, test_g])  
-    import pdb; pdb.set_trace()
+    # net = Net().to('cuda')
+    # test_tensor, test_scalar = np.random.randint(-1, 1, (7, 4, 4, 4)), np.random.randint(-1, 1, (3))
+    # test_input = [test_tensor[None], test_scalar[None]]
+    # test_g = torch.tensor([-1,0,1,2,3,4,5]).repeat(1).reshape(1, 7).to('cuda')
+    # train_output = net([*test_input, test_g])  
+    # # import pdb; pdb.set_trace()
     
-    net.set_mode("infer")
-    test_input = [np.random.randint(-1, 1, (7, 4, 4, 4)), np.random.randint(-1, 1, (3))]
-    infer_output = net(test_input)
-    import pdb; pdb.set_trace()
-    
-    _, value = net.value(infer_output)
-    policy = net.policy(infer_output)
-    import pdb; pdb.set_trace()
-    
-    # net = Net()
-    # logits = np.array([0,1,2,2,1,1])
-    # action = net.logits_to_action(logits)
-    # logits = net.action_to_logits(action)
+    # net.set_mode("infer")
+    # test_input = [test_tensor, test_scalar]
+    # infer_output = net(test_input)
     # import pdb; pdb.set_trace()
+    
+    # _, value = net.value(infer_output)
+    # policy = net.policy(infer_output)
+    # import pdb; pdb.set_trace()
+    
+    net = Net()
+    logits = np.array([-1,0,1,2,2,1,1])
+    action = net.logits_to_action(logits)
+    logits = net.action_to_logits(action)
+    import pdb; pdb.set_trace()

@@ -29,22 +29,29 @@ class TupleDataset(Dataset):
         self.S_size = S_size
         self.N_steps = N_steps
         self.coefficients = coefficients
+        token_len = 3 * S_size // N_steps
+        self.N_logits = len(coefficients) ** token_len
         
         print("Preprocessing dataset...")
-        self.self_examples = self_examples
-        self.synthetic_examples = synthetic_examples
-        if debug:
-            self.self_examples = self_examples[:100]
-            self.synthetic_examples = synthetic_examples[:100]
+        self.self_examples = []
+        self.synthetic_examples = []
             
         #TODO: Randomize sign permutation.
         #TODO: Reformualte data format.            
         # Canonicalize actions & to logits.
-        for episode in tqdm(self.synthetic_examples):
-            episode[1] = self.action_to_logits(canonicalize_action(episode[1]))
-        for episode in tqdm(self.self_examples):
-            episode[1] = self.action_to_logits(canonicalize_action(episode[1]))
+        for episode in tqdm(synthetic_examples):
+            state, action, reward = episode
+            action = self.action_to_logits(canonicalize_action(action))
+            self.synthetic_examples.append([state, action, reward])
+        for episode in tqdm(self_examples):
+            state, action, reward = episode
+            action = self.action_to_logits(canonicalize_action(action))
+            self.self_examples.append([state, action, reward])
         
+        if debug:
+            self.self_examples = self_examples[:100]
+            self.synthetic_examples = synthetic_examples[:100] 
+                   
         self.examples = self.self_examples + self.synthetic_examples
             
         
@@ -71,7 +78,7 @@ class TupleDataset(Dataset):
         action = action.reshape((-1, token_len))     # [N_steps, token_len]
         
         # Get logits.
-        logits = []
+        logits = [self.N_logits]                # Start sign.
         for token in action:         # Get one logit.
             # token = token.to_list()
             logit = 0
@@ -99,8 +106,10 @@ class TupleDataset(Dataset):
         token_len = 3 * self.S_size // self.N_steps
         coefficients = self.coefficients
         action = []
-        for logit in logits:                       # Get one action
+        for logit in logits[1:]:                   # Get one action ([1:] means ignore start sign)
             token = []
+            if logit == self.N_logits:
+                raise                              # Mean that there is a start sign in the middle of action.            
             for _ in range(token_len):             # Get one token
                 idx = logit % len(coefficients)
                 token.append(coefficients[idx])

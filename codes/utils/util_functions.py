@@ -3,7 +3,7 @@ import torch
 
 '''
 Note that:
-    All function use np as input and output.
+    All function use np as input and output. (Except one_hot)
 '''
 
 def numpy_cvt(a):
@@ -39,19 +39,22 @@ def canonicalize_action(action):
     return np.stack([u, v, w])
 
 def one_hot(a_s, num_classes):
+    '''
+    Note: We return a size of num_classes+1 array.
+    '''
     if len(a_s.shape) == 1:
-        result = torch.zeros((a_s.shape[0], num_classes)).long()
+        result = torch.zeros((a_s.shape[0], num_classes+1)).long()
         for idx, a in enumerate(a_s):
-            if a == -1:
-                continue
+            # if a == -1:
+            #     continue
             result[idx, a] = 1
         return result
     elif len(a_s.shape) == 2:
-        result = torch.zeros((a_s.shape[0], a_s.shape[1], num_classes)).long()
+        result = torch.zeros((a_s.shape[0], a_s.shape[1], num_classes+1)).long()
         for batch, a_batch in enumerate(a_s):
             for idx, a in enumerate(a_batch):
-                if a == -1:
-                    continue
+                # if a == -1:
+                #     continue
                 result[batch, idx, a] = 1
         return result
     

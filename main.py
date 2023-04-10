@@ -25,7 +25,8 @@ if __name__ == '__main__':
     env = Environment(**kwargs["env"],
                       init_state=None)
     trainer = Trainer(**kwargs["trainer"],
-                      net=net, env=env, mcts=mcts)
+                      net=net, env=env, mcts=mcts,
+                      all_kwargs=kwargs)
     
     
     # import pdb; pdb.set_trace()
@@ -38,7 +39,11 @@ if __name__ == '__main__':
     # trainer.infer(resume="./exp/debug/1680764978/ckpt/it0002000.pth")
     # import pdb; pdb.set_trace()
     # trainer.generate_synthetic_examples(samples_n=100000, save_path="./data/100000_T5_scalar3.npy")
-    # trainer.learn(resume=None,
-    #               example_path="./data/100000_T5_scalar3.npy")
-    trainer.learn(resume="./exp/debug/1680958170/ckpt/it0030000.pth",
+    trainer.learn(resume=None,
                   example_path="./data/3000_T5_scalar3.npy")
+    # trainer.learn(resume="./exp/debug/1680958170/ckpt/it0030000.pth",
+    #               example_path="./data/3000_T5_scalar3.npy")
+    # trainer.infer(resume="./exp/debug/1681014016/ckpt/final.pth",
+    #               mcts_samples_n=32,
+    #               mcts_simu_times=32,
+    #               vis=False)
