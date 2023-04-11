@@ -168,9 +168,9 @@ class Attention(nn.Module):
         self.d, self.w = d, w
         self.device = device
         
-        self.x_layer_norm = nn.LayerNorm((x_channel,))
-        self.y_layer_norm = nn.LayerNorm((y_channel,))
-        self.final_layer_norm = nn.LayerNorm((x_channel,))
+        self.x_layer_norm = nn.LayerNorm(x_channel)
+        self.y_layer_norm = nn.LayerNorm(y_channel)
+        self.final_layer_norm = nn.LayerNorm(x_channel)
         self.W_Q = nn.Linear(x_channel, d * N_heads)
         self.W_K = nn.Linear(y_channel, d * N_heads)
         self.W_V = nn.Linear(y_channel, d * N_heads)
@@ -205,12 +205,12 @@ class Attention(nn.Module):
         v_s = self.W_V(y_norm).view(batch_size, -1, N_heads, d).transpose(1, 2)   # [batch_size, N_heads, N_y, d]
         
         scores = torch.matmul(q_s, k_s.transpose(-1, -2)) / np.sqrt(d)            # [batch_size, N_heads, N_x, N_y]
-        if self.causal_mask:
-            # mask = torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)).float().to(self.device)
-            # mask = torch.from_numpy(np.tril(np.ones([batch_size, N_heads, N_x, N_y]), k=0)).float().to(self.device)
-            mask = (torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)) == 0).to(self.device)
-            scores = scores.masked_fill(mask == 0, -1e9)
         scores = F.softmax(scores, dim=-1)
+        if self.causal_mask:
+            # mask = (torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)) == 0).to(self.device)
+            # scores = scores.masked_fill(mask == 0, -1e9)
+            scores = scores * torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)).float().to(self.device)
+        # scores = F.softmax(scores, dim=-1)
         
         o_s = torch.matmul(scores, v_s)   # [batch_size, N_heads, N_x, d]
         o_s = o_s.transpose(1, 2).contiguous().view(batch_size, -1, N_heads*d)          # [batch_size, N_x, N_heads*d]
@@ -246,9 +246,14 @@ class PolicyHead(nn.Module):
         self.device = device
         
         self.linear_1 = nn.Linear(N_logits+1, N_features * N_heads)
-        self.pos_embed = nn.Linear(1, N_features * N_heads)
-        self.self_layer_norms = nn.Sequential(*[nn.LayerNorm((N_features * N_heads)) for _ in range(N_layers)])
-        self.cross_layer_norms = nn.Sequential(*[nn.LayerNorm(( N_features * N_heads)) for _ in range(N_layers)])   #FIXME: How to choose layer norm's channel?
+        # self.pos_embed = nn.Linear(1, N_features * N_heads)
+        self.pos_embed = nn.Sequential(
+            nn.Linear(1, 512),
+            nn.ReLU(),
+            nn.Linear(512, N_features * N_heads)
+        )
+        self.self_layer_norms = nn.Sequential(*[nn.LayerNorm(N_features * N_heads) for _ in range(N_layers)])
+        self.cross_layer_norms = nn.Sequential(*[nn.LayerNorm(N_features * N_heads) for _ in range(N_layers)])   #FIXME: How to choose layer norm's channel?
         self.self_attentions = nn.Sequential(*[Attention(x_channel=N_features * N_heads,
                                                y_channel=N_features * N_heads,
                                                N_x=N_steps+1,
@@ -295,7 +300,8 @@ class PolicyHead(nn.Module):
         
         elif self.mode == 'infer':
             e = x[0]                            # e: [B, m, c], B=1
-            a = -torch.ones((N_samples, N_steps+1)).long().to(device)       # a: {-1,0,1, ... N_logits-1} ^ [N_samples, N_steps+1]
+            a = torch.zeros((N_samples, N_steps+1)).long().to(device)       # a: {-1,0,1, ... N_logits-1} ^ [N_samples, N_steps+1]
+            a[:, 0] = -1                        # Start sign.
             p = torch.ones((N_samples,)).float().to(device)
             
             # We sample N_samples batchly.
@@ -345,18 +351,20 @@ class PolicyHead(nn.Module):
         for layer in range(N_layers):
             x = self.self_layer_norms[layer](x)         # [batch_size, N_steps, N_features*N_heads]
             c = self.self_attentions[layer]([x,])       # [batch_size, N_steps, N_features*N_heads]
-            if self.mode == 'train':
-                c = self.self_dropouts[layer](c)
-            else:
-                c = self.self_dropouts[layer].eval()(c)
+            # if self.mode == 'train':
+            #     c = self.self_dropouts[layer](c)
+            # else:
+            #     c = self.self_dropouts[layer].eval()(c)
+            c = self.self_dropouts[layer](c)
             x = x + c                                   # [batch_size, N_steps, N_features*N_heads]
 
             x = self.cross_layer_norms[layer](x)        # [batch_size, N_steps, N_features*N_heads]
             c = self.cross_attentions[layer]([x, e])    # [batch_size, N_steps, N_features*N_heads]
-            if self.mode == 'train':
-                c = self.cross_dropouts[layer](c)
-            else:
-                c = self.self_dropouts[layer].eval()(c)                
+            # if self.mode == 'train':
+            #     c = self.cross_dropouts[layer](c)
+            # else:
+            #     c = self.cross_dropouts[layer].eval()(c)              
+            c = self.cross_dropouts[layer](c)  
             x = x + c                                   # [batch_size, N_steps, N_features*N_heads]
         
         o = self.linear_2(self.relu(x.reshape(-1, N_features*N_heads))).reshape(batch_size, (N_steps+1), N_logits+1)  # [batch_size, N_steps, N_logits]

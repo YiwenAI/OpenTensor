@@ -38,3 +38,9 @@ To do:
 4/10:
 	1. 添加了启动子
 		（N_steps+1, N_logits+1，用最后一位Logit来表示启动子；训练时对整个N_steps+1进行loss计算；infer时只对非启动子进行采样）
+	2. 修改了一个network bug （dropout）
+	3. dropout在train和infer之间的区别？
+4/11:
+	1. 修改了LayerNorm
+	2. 在infer时，第一个是启动子，然后其他用0来补充
+	3. causal mask更改

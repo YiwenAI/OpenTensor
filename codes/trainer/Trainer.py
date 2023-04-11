@@ -188,6 +188,8 @@ class Trainer():
         self.net.set_mode("infer")
         self.net.set_samples_n(4)
         output = self.net(state)
+        a, p, _ = output
+        a = a.detach().cpu().numpy()
         q, v = self.net.value(output)
         policy, p = self.net.policy(output)
         
@@ -201,6 +203,7 @@ class Trainer():
             ["\nGt action: \n", str(self.net.logits_to_action(action[0])),
              "\nGt logit: \n", str(action[0]),
             "\nInfer actions: \n", str(policy),
+            "\nInfer logits: \n", str(a),
             "\nprob: \n", str(p),
             "\nGt value: \n", str(reward),
             "\nInfer value: \n", str(v),
