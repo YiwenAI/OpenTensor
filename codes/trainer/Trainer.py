@@ -261,7 +261,7 @@ class Trainer():
                                coefficients=self.coefficients,
                                self_examples=self.self_examples,
                                synthetic_examples=self.synthetic_examples)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+        dataloader = MultiEpochsDataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
         loader = iter(dataloader)
         epoch_ct = 0
         
