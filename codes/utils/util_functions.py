@@ -38,24 +38,30 @@ def canonicalize_action(action):
             break
     return np.stack([u, v, w])
 
-def one_hot(a_s, num_classes):
+def one_hot(a_s, num_classes, shift=False):
     '''
     Note: We return a size of num_classes+1 array.
     '''
     if len(a_s.shape) == 1:
         result = torch.zeros((a_s.shape[0], num_classes+1)).long()
         for idx, a in enumerate(a_s):
-            # if a == -1:
-            #     continue
+            if a == -2:
+                continue
             result[idx, a] = 1
+        if shift:       # Append SOS.
+            result = torch.cat([torch.zeros((1, num_classes+1)).long(), result], dim=0)
+            result[0, -1] = 1
         return result
     elif len(a_s.shape) == 2:
         result = torch.zeros((a_s.shape[0], a_s.shape[1], num_classes+1)).long()
         for batch, a_batch in enumerate(a_s):
             for idx, a in enumerate(a_batch):
-                # if a == -1:
-                #     continue
+                if a == -2:
+                    continue
                 result[batch, idx, a] = 1
+        if shift:       # Append SOS.
+            result = torch.cat([torch.zeros((a_s.shape[0], 1, num_classes+1)).long(), result], dim=1)
+            result[:, 0, -1] = 1                
         return result
     
 def change_basis_tensor(tensor,

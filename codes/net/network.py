@@ -40,9 +40,9 @@ class Torso(nn.Module):
         self.mode = mode
         self.device = device
         
-        self.attentive_modes = nn.Sequential(*[AttentiveModes(S_size, channel) for _ in range(n_attentive)])
-        self.scalar2grid = nn.Sequential(*[nn.Linear(scalar_size, S_size**2) for _ in range(3)])                    # s -> S*S
-        self.grid2grid = nn.Sequential(*[nn.Linear(S_size**2*(T*S_size+1), S_size**2*channel) for _ in range(3)])   # S*S*TS+1 -> S*S*c
+        self.attentive_modes = nn.ModuleList([AttentiveModes(S_size, channel) for _ in range(n_attentive)])
+        self.scalar2grid = nn.ModuleList([nn.Linear(scalar_size, S_size**2) for _ in range(3)])                    # s -> S*S
+        self.grid2grid = nn.ModuleList([nn.Linear(S_size**2*(T*S_size+1), S_size**2*channel) for _ in range(3)])   # S*S*TS+1 -> S*S*c
         
         
     def forward(self, x):
@@ -110,7 +110,7 @@ class AttentiveModes(nn.Module):
         self.channel = channel
         self.S_size = S_size
         
-        # self.attentions = nn.Sequential(*[Attention(channel,
+        # self.attentions = nn.ModuleList(*[Attention(channel,
         #                                   channel,
         #                                   2*S_size,
         #                                   2*S_size,
@@ -171,9 +171,9 @@ class Attention(nn.Module):
         self.x_layer_norm = nn.LayerNorm(x_channel)
         self.y_layer_norm = nn.LayerNorm(y_channel)
         self.final_layer_norm = nn.LayerNorm(x_channel)
-        self.W_Q = nn.Linear(x_channel, d * N_heads)
-        self.W_K = nn.Linear(y_channel, d * N_heads)
-        self.W_V = nn.Linear(y_channel, d * N_heads)
+        self.W_Q = nn.Linear(x_channel, d * N_heads, bias=False)
+        self.W_K = nn.Linear(y_channel, d * N_heads, bias=False)
+        self.W_V = nn.Linear(y_channel, d * N_heads, bias=False)
         self.linear_1 = nn.Linear(d * N_heads, x_channel)
         self.linear_2 = nn.Linear(x_channel, x_channel * w)
         self.linear_3 = nn.Linear(x_channel * w, x_channel)
@@ -205,12 +205,12 @@ class Attention(nn.Module):
         v_s = self.W_V(y_norm).view(batch_size, -1, N_heads, d).transpose(1, 2)   # [batch_size, N_heads, N_y, d]
         
         scores = torch.matmul(q_s, k_s.transpose(-1, -2)) / np.sqrt(d)            # [batch_size, N_heads, N_x, N_y]
-        scores = F.softmax(scores, dim=-1)
-        if self.causal_mask:
-            # mask = (torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)) == 0).to(self.device)
-            # scores = scores.masked_fill(mask == 0, -1e9)
-            scores = scores * torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)).float().to(self.device)
         # scores = F.softmax(scores, dim=-1)
+        if self.causal_mask:
+            mask = (torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)) == 0).to(self.device)
+            scores = scores.masked_fill(mask == 0, -1e9)
+            # scores = scores * torch.from_numpy(np.triu(np.ones([batch_size, N_heads, N_x, N_y]), k=1)).float().to(self.device)
+        scores = F.softmax(scores, dim=-1)
         
         o_s = torch.matmul(scores, v_s)   # [batch_size, N_heads, N_x, d]
         o_s = o_s.transpose(1, 2).contiguous().view(batch_size, -1, N_heads*d)          # [batch_size, N_x, N_heads*d]
@@ -245,31 +245,31 @@ class PolicyHead(nn.Module):
         self.mode = mode
         self.device = device
         
-        self.linear_1 = nn.Linear(N_logits+1, N_features * N_heads)
+        self.linear_1 = nn.Linear(N_logits+1, N_features * N_heads, bias=False)
         # self.pos_embed = nn.Linear(1, N_features * N_heads)
         self.pos_embed = nn.Sequential(
             nn.Linear(1, 512),
             nn.ReLU(),
             nn.Linear(512, N_features * N_heads)
         )
-        self.self_layer_norms = nn.Sequential(*[nn.LayerNorm(N_features * N_heads) for _ in range(N_layers)])
-        self.cross_layer_norms = nn.Sequential(*[nn.LayerNorm(N_features * N_heads) for _ in range(N_layers)])   #FIXME: How to choose layer norm's channel?
-        self.self_attentions = nn.Sequential(*[Attention(x_channel=N_features * N_heads,
+        self.self_layer_norms = nn.ModuleList([nn.LayerNorm(N_features * N_heads) for _ in range(N_layers)])
+        self.cross_layer_norms = nn.ModuleList([nn.LayerNorm(N_features * N_heads) for _ in range(N_layers)])   #FIXME: How to choose layer norm's channel?
+        self.self_attentions = nn.ModuleList([Attention(x_channel=N_features * N_heads,
                                                y_channel=N_features * N_heads,
                                                N_x=N_steps+1,
                                                N_y=N_steps+1,
                                                causal_mask=True,
                                                N_heads=N_heads,
                                                device=device) for _ in range(N_layers)])
-        self.cross_attentions = nn.Sequential(*[Attention(x_channel=N_features * N_heads,
+        self.cross_attentions = nn.ModuleList([Attention(x_channel=N_features * N_heads,
                                                 y_channel=torso_feature_shape[1],
                                                 N_x=N_steps+1,
                                                 N_y=torso_feature_shape[0],
                                                 causal_mask=False,
                                                 N_heads=N_heads,
                                                 device=device) for _ in range(N_layers)])
-        self.self_dropouts = nn.Sequential(*[nn.Dropout() for _ in range(N_layers)])
-        self.cross_dropouts = nn.Sequential(*[nn.Dropout() for _ in range(N_layers)])
+        self.self_dropouts = nn.ModuleList([nn.Dropout() for _ in range(N_layers)])
+        self.cross_dropouts = nn.ModuleList([nn.Dropout() for _ in range(N_layers)])
         self.relu = nn.ReLU()
         self.linear_2 = nn.Linear(N_features * N_heads, N_logits+1)
         
@@ -291,16 +291,16 @@ class PolicyHead(nn.Module):
             e, g = x                            # g: {0,1,... N_logits-1} ^ [B, N_steps+1], [B, N_steps+1]
             if not torch.is_tensor(g):
                 g = torch.tensor(g).long()
-            g_onehot = one_hot(g, num_classes=N_logits).float().to(device)     # [B, N_steps+1, N_logits+1]
+            g_onehot = one_hot(g, num_classes=N_logits, shift=True).float().to(device)     # [B, N_steps+1, N_logits+1]
             #FIXME: We haven't applied "shift" operation.
             # # Apply "start" sign.
             # g_onehot = torch.cat([torch.zeros_like(g_onehot[:, :1, :]), g_onehot], dim=1)    # [B, N_steps+1, N_logits+1]
             o, z = self.predict_action_logits(g_onehot, e)    # o: [B, N_steps+1, N_logits+1]; z: [B, N_steps+1, N_features*N_heads]
-            return o, z[:, 0]                                 # o: [B, N_steps+1, N_logits+1]; z[:, 0]: [B, N_features*N_heads]
+            return o[:, :-1, :], z[:, 0]                      # o: [B, N_steps+1, N_logits+1]; z[:, 0]: [B, N_features*N_heads]
         
         elif self.mode == 'infer':
             e = x[0]                            # e: [B, m, c], B=1
-            a = torch.zeros((N_samples, N_steps+1)).long().to(device)       # a: {-1,0,1, ... N_logits-1} ^ [N_samples, N_steps+1]
+            a = -2 * torch.ones((N_samples, N_steps+1)).long().to(device)       # a: {-2,-1,0,1, ... N_logits-1} ^ [N_samples, N_steps+1]
             a[:, 0] = -1                        # Start sign.
             p = torch.ones((N_samples,)).float().to(device)
             
@@ -308,7 +308,7 @@ class PolicyHead(nn.Module):
             e = e.repeat(N_samples, 1, 1)       # e: [B, m, c], B=N_samples
             for i in range(1, N_steps+1):
                 o, z = self.predict_action_logits(one_hot(a, num_classes=N_logits).float().to(device), e)
-                prob = F.softmax(o[:, i, :-1], dim=1)                   # o[:, i, :-1]: [N_samples, N_logits]
+                prob = F.softmax(o[:, i-1, :-1], dim=1)            # o[:, i-1, :-1]: [N_samples, N_logits]
                 sampled_a = torch.multinomial(prob, 1).view(-1)    # sampled_a = [N_samples,]
                 for s in range(N_samples):
                     p[s] = p[s] * prob[s, sampled_a[s]]
@@ -317,7 +317,7 @@ class PolicyHead(nn.Module):
                 if i == 1:
                     z1 = z[0, 0].clone()              # [N_features*N_heads]
                 
-            return a, p, z1                           # [N_samples, N_steps+1], [N_samples], [N_features*N_heads]
+            return a[:, 1:], p, z1                    # [N_samples, N_steps], [N_samples], [N_features*N_heads]
     
     
     def set_mode(self, mode):
@@ -388,9 +388,9 @@ class ValueHead(nn.Module):
         self.mode = "train"
         
         self.in_linear = nn.Linear(in_channel, inter_channel)
-        self.linaers = nn.Sequential(*[nn.Linear(inter_channel, inter_channel) for _ in range(N_layers-1)])
+        self.linaers = nn.ModuleList([nn.Linear(inter_channel, inter_channel) for _ in range(N_layers-1)])
         self.out_linear = nn.Linear(inter_channel, out_channel)
-        self.relus = nn.Sequential(*[nn.ReLU() for _ in range(N_layers)])
+        self.relus = nn.ModuleList([nn.ReLU() for _ in range(N_layers)])
         
     
     def forward(self, x):
@@ -541,7 +541,7 @@ class Net(nn.Module):
         token_len = self.token_len
         coefficients = self.coefficients
         action = []
-        for logit in logits[1:]:                   # Get one action
+        for logit in logits:                       # Get one action
             token = []
             if logit == self.N_logits:
                 raise 
@@ -568,7 +568,7 @@ class Net(nn.Module):
         action = action.reshape((-1, token_len))     # [N_steps, token_len]
         
         # Get logits.
-        logits = [self.N_logits]
+        logits = []
         for token in action:         # Get one logit.
             # token = token.to_list()
             logit = 0

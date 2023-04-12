@@ -208,7 +208,7 @@ class Trainer():
             "\nGt value: \n", str(reward),
             "\nInfer value: \n", str(v),
             "\nquantile: \n", str(q),
-            *["\nTop 5 logit for step %d\n: " % step + str(np.argsort(o[step])[-5:]) for step in range(self.net.N_steps+1)]]
+            *["\nTop 5 logit for step %d\n: " % step + str(np.argsort(o[step])[-5:]) for step in range(self.net.N_steps)]]
         )
         
         return log_txt
@@ -287,7 +287,7 @@ class Trainer():
                 epoch_ct += 1
 
             # 此处进行多进程优化
-            # todo: 什么时候更新网络参数
+            # todo: 什么时候更新网络参数                     
             optimizer.zero_grad()
             loss, v_loss, a_loss = self.learn_one_batch(batch_example)
             loss.backward()
@@ -443,7 +443,9 @@ if __name__ == '__main__':
     # trainer.infer()
     # trainer.infer(resume="./exp/debug/1680764978/ckpt/it0002000.pth")
     # import pdb; pdb.set_trace()
-    trainer.generate_synthetic_examples(samples_n=3000, save_path="./data/3000_T5_scalar3.npy")
+    # trainer.generate_synthetic_examples(samples_n=3000, save_path="./data/3000_T5_scalar3.npy")
     # trainer.learn(resume=None,
     #               example_path="./data/100000_T5_scalar3.npy")
     # trainer.learn(resume=None)
+    trainer.learn(resume=None,
+                  example_path="./data/3000_T5_scalar3.npy")

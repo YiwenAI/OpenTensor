@@ -78,7 +78,7 @@ class TupleDataset(Dataset):
         action = action.reshape((-1, token_len))     # [N_steps, token_len]
         
         # Get logits.
-        logits = [self.N_logits]                # Start sign.
+        logits = []                  # Start sign.
         for token in action:         # Get one logit.
             # token = token.to_list()
             logit = 0
@@ -106,7 +106,7 @@ class TupleDataset(Dataset):
         token_len = 3 * self.S_size // self.N_steps
         coefficients = self.coefficients
         action = []
-        for logit in logits[1:]:                   # Get one action ([1:] means ignore start sign)
+        for logit in logits:                       # Get one action
             token = []
             if logit == self.N_logits:
                 raise                              # Mean that there is a start sign in the middle of action.            

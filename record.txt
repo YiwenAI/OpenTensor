@@ -44,3 +44,5 @@ To do:
 	1. 修改了LayerNorm
 	2. 在infer时，第一个是启动子，然后其他用0来补充
 	3. causal mask更改
+	4. Loss下降得太快，，，还是出现了g_action的泄露？
+	5. 去除了一些线性层的bias
