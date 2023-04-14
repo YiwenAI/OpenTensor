@@ -90,7 +90,7 @@ class TupleDataset(Dataset):
                 logit += coefficients.index(v) * (len(coefficients) ** idx)
             logits.append(logit)
             
-        return np.array(logits)
+        return np.array(logits, dtype=np.int32)
     
     def logits_to_action(self, logits):
         '''
@@ -123,9 +123,9 @@ class TupleDataset(Dataset):
     def random_sign_permutation(self,
                                 tensor, action):
         trans_1, trans_2, trans_3 = \
-            np.random.binomial(1, .5, self.S_size) * 2 - 1, \
-            np.random.binomial(1, .5, self.S_size) * 2 - 1, \
-            np.random.binomial(1, .5, self.S_size) * 2 - 1
+            (np.random.binomial(1, .5, self.S_size) * 2 - 1).astype(np.int32), \
+            (np.random.binomial(1, .5, self.S_size) * 2 - 1).astype(np.int32), \
+            (np.random.binomial(1, .5, self.S_size) * 2 - 1).astype(np.int32)
         tensor = np.einsum('i, j, k, bijk -> bijk', trans_1, trans_2, trans_3, tensor,
                            dtype=np.int32)
         action = np.stack([action[0]*trans_1, action[1]*trans_2, action[2]*trans_3], axis=0)
