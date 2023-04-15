@@ -356,7 +356,7 @@ class Trainer():
               resume=None,
               vis=False):
         
-        actions = []
+        log_actions = []
         
         assert resume is not None, "No meaning for random init infer."
         if resume is not None:
@@ -388,7 +388,7 @@ class Trainer():
             print(action)
             terminate_flag = env.step(action)                            # Will change self.cur_state. 
             mcts.move(action)                                            # Move MCTS forward.       
-            actions.append(action)   
+            log_actions.append(action)   
             
             with open(infer_log_f, "a") as f:
                 f.write(log_txt)
@@ -396,13 +396,22 @@ class Trainer():
             
             if terminate_flag:
                 print("We get to the end!")
+                break
                 
             
         print("Final result:")
         print(env.cur_state)
         
         print("Actions are:")
-        print(np.stack(actions, axis=0))
+        print(np.stack(log_actions, axis=0))
+        
+        with open(infer_log_f, "a") as f:
+            f.write("\n\n\n") 
+            f.write("\nFinal result:\n")
+            f.write("\n" + str(env.cur_state) + "\n") 
+            f.write("\nActions are:\n")
+            f.write("\n" + str(np.stack(log_actions, axis=0)) + "\n")
+            f.write("\n\n\n")         
         
     
     def save_model(self, ckpt_name, iter):

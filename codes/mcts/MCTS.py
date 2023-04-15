@@ -147,7 +147,7 @@ class Node():
             action_idx = node.pre_action_idx
             node = node.parent
             node.N[action_idx] += 1
-            v = (value + -1 * (node.depth + 1))
+            v = (value + -1 * (self.depth + 1))
             node.Q[action_idx] = v / node.N[action_idx] +\
                                  node.Q[action_idx] * (node.N[action_idx] - 1) / node.N[action_idx]
     
