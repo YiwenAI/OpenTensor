@@ -17,7 +17,7 @@ trainer:
     - 1
     - -1  
   exp_dir: "exp"
-  exp_name: "first_exp"
+  exp_name: "ablation"
   device: "cuda"  
 
   lr: 0.0001
@@ -25,7 +25,7 @@ trainer:
   gamma: .1
   step_size: 200000
   iters_n: 500000
-  batch_size: 2048
+  batch_size: 64
   a_weight: .5
   v_weight: .5
   save_freq: 50000

@@ -24,7 +24,8 @@ class Node():
                  state,
                  parent,
                  pre_action,
-                 pre_action_idx):
+                 pre_action_idx,
+                 is_terminal=False):
         #####
         # 这里应该初始化一个节点，
         # 包括Q, N以及女儿父母
@@ -37,6 +38,7 @@ class Node():
         self.pre_action = pre_action     # pre_action: Action (or None).
         self.pre_action_idx = pre_action_idx
         self.is_leaf = True
+        self.is_terminal = is_terminal
         self.state = state      # state: Tensor.
         
         self.actions = []       # A list for actions.
@@ -63,6 +65,19 @@ class Node():
         if not self.is_leaf:
             raise Exception("This node has been expanded.")
         self.is_leaf = False
+        
+        if self.is_terminal:    # Mean the state is terminal. Only propagate.
+            node = self
+            node.is_leaf = True
+            while node.parent is not None:
+                action_idx = node.pre_action_idx
+                node = node.parent
+                node.N[action_idx] += 1
+                v = (0 + -1 * (node.depth + 1))
+                node.Q[action_idx] = v / node.N[action_idx] +\
+                                    node.Q[action_idx] * (node.N[action_idx] - 1) / node.N[action_idx]   
+            
+            return         
         
         #FIXME: Here we can apply a transposition table.
         
@@ -107,7 +122,7 @@ class Node():
                         ct += 1
                         rec[i] = True
                 pi.append(ct / N_samples)
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         self.actions = actions
         self.pi = pi
         self.children_n = len(actions)
@@ -122,7 +137,8 @@ class Node():
             child_node = Node(state=child_state,
                               parent=self,
                               pre_action=action,
-                              pre_action_idx=idx)
+                              pre_action_idx=idx,
+                              is_terminal=is_zero_tensor(child_state))
             self.children.append(child_node)
             
         # Backward propagate.
@@ -131,10 +147,12 @@ class Node():
             action_idx = node.pre_action_idx
             node = node.parent
             node.N[action_idx] += 1
-            node.Q[action_idx] += (value + -1 * (node.depth + 1))
+            v = (value + -1 * (node.depth + 1))
+            node.Q[action_idx] = v / node.N[action_idx] +\
+                                 node.Q[action_idx] * (node.N[action_idx] - 1) / node.N[action_idx]
     
     
-    def select(self, c=.5):
+    def select(self, c=None):
         '''
         Choose the best child.
         Return the chosen node.
@@ -142,10 +160,13 @@ class Node():
         if self.is_leaf:
             raise Exception("Cannot choose a leaf node.")
         
+        if c is None:
+            c = 1.25 + math.log((1+19652+sum(self.N)) / 19652)
+        
         scores = [self.Q[i] + c * self.pi[i] * math.sqrt(sum(self.N)) / (1 + self.N[i])
                   for i in range(self.children_n)]
         
-        return self.children[np.argmax(scores)]
+        return self.children[np.argmax(scores)], scores
         
     
 
@@ -172,7 +193,8 @@ class MCTS():
     
     def __call__(self,
                  state,
-                 net: Net):
+                 net: Net,
+                 log=False):
         '''
         进行一次MCTS
         返回: action, actions, visit_pi
@@ -184,13 +206,17 @@ class MCTS():
             # Select a leaf node.
             node = self.root_node
             while not node.is_leaf:
-                node = node.select()         #FIXME: Need to control the factor c.
+                node, scores = node.select()         #FIXME: Need to control the factor c.
             node.expand(net)
         
         actions = self.root_node.actions
         N = self.root_node.N
         visit_ratio = (np.array(N) / sum(N)).tolist()
         action = actions[np.argmax(visit_ratio)]
+        
+        if log:
+            log_txt = self.log()
+            return action, actions, visit_ratio, log_txt
         
         return action, actions, visit_ratio
         
@@ -248,6 +274,30 @@ class MCTS():
         raise NotImplementedError
         plt.show()
     
+    
+    def log(self):
+        '''
+        Get the log text.
+        '''
+        node = self.root_node
+        state_txt = str(node.state)    # state.
+        _, scores = node.select()
+        N, Q, scores, children = np.array(node.N), np.array(node.Q), np.array(scores), np.array(node.actions)
+        top_k_idx = np.argsort(N)[-5:]
+        N, Q, scores, children = N[top_k_idx], Q[top_k_idx], scores[top_k_idx], children[top_k_idx]
+        
+        N_txt, Q_txt, scores_txt, children_txt = str(N), str(Q), str(scores), str(children)
+        
+        log_txt = "\n".join(
+            ["\nCur state: \n", state_txt,
+             "\nDepth: \n", str(node.depth),
+             "\nchildren: \n", children_txt,
+            "\nscores: \n", scores_txt,
+            "\nQ: \n", Q_txt,
+            "\nN: \n", N_txt,]
+        )     
+        
+        return log_txt   
     
     
 if __name__ == '__main__':

@@ -358,8 +358,13 @@ class Trainer():
         
         actions = []
         
+        assert resume is not None, "No meaning for random init infer."
         if resume is not None:
             self.load_model(resume)
+            exp_dir = os.path.join(os.path.dirname(resume), '..')
+            infer_log_dir = os.path.join(exp_dir, "infer")
+            os.makedirs(infer_log_dir, exist_ok=True)
+            infer_log_f = os.path.join(infer_log_dir, str(int(time.time()))+'.txt')
         
         net = self.net
         env = self.env
@@ -376,14 +381,18 @@ class Trainer():
             print("Current state is (step%d):" % step)
             print(env.cur_state)
             
-            action, actions, pi = mcts(env.cur_state, net)
+            action, actions, pi, log_txt = mcts(env.cur_state, net, log=True)
             if vis:
                 mcts.visualize()
             print("We choose action(step%d):" % step)
             print(action)
             terminate_flag = env.step(action)                            # Will change self.cur_state. 
             mcts.move(action)                                            # Move MCTS forward.       
-            actions.append(action)     
+            actions.append(action)   
+            
+            with open(infer_log_f, "a") as f:
+                f.write(log_txt)
+                f.write("\n\n\n")  
             
             if terminate_flag:
                 print("We get to the end!")
