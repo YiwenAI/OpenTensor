@@ -81,7 +81,21 @@ class Environment():
         
         # 2. Change of Basis.
         #FIXME: We haven't applied "basis change" operation.
-        # raise NotImplementedError
+        # Randomly get a transform matrix.
+        if not no_base_change:
+            p0 = .985
+            P, L = np.random.choice([0, 1, -1], size=(S_size, S_size), p=[p0, (1-p0)/2, (1-p0)/2], replace=True),\
+                np.random.choice([0, 1, -1], size=(S_size, S_size), p=[p0, (1-p0)/2, (1-p0)/2], replace=True)
+            for i in range(S_size):
+                P[i, i] = np.random.choice([1, -1], size=(1,), p=[.5, .5])
+                L[i, i] = np.random.choice([1, -1], size=(1,), p=[.5, .5])
+            P, L = np.triu(P), np.tril(L)
+            trans_mat = np.matmul(P, L)
+            
+            init_state = change_basis_tensor(tensor=init_state,
+                                            trans_mat=trans_mat)
+            import pdb; pdb.set_trace()
+        
         return init_state
             
     def step(self,

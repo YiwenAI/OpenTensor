@@ -66,5 +66,5 @@ def one_hot(a_s, num_classes, shift=False):
     
 def change_basis_tensor(tensor,
                         trans_mat):
-    return np.einsum('ij, kl, mn, jln -> ijk',
+    return np.einsum('ij, kl, mn, jln -> ikm',
                      trans_mat, trans_mat, trans_mat, tensor)

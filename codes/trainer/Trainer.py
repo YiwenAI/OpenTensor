@@ -217,7 +217,8 @@ class Trainer():
         
     def learn(self,
               resume=None,
-              example_path=None):
+              example_path=None,
+              self_example_path=None):
         '''
         训练的主函数
         '''
@@ -254,6 +255,9 @@ class Trainer():
             self.synthetic_examples.extend(self.load_examples(example_path))
         else:
             self.synthetic_examples.extend(self.generate_synthetic_examples(samples_n=3000))
+            
+        if self_example_path is not None:
+            self.self_examples.extend(self.load_examples(self_example_path))
         
         # Dataloader.
         dataset = TupleDataset(S_size=self.S_size,
@@ -317,7 +321,9 @@ class Trainer():
             
             
     def play(self,
-             simu_times=200) -> list:
+             simu_times=400,
+             play_times=10000,
+             save_path=None) -> list:
         '''
         进行一次Tensor Game, 得到游玩记录
         返回: results
@@ -326,27 +332,38 @@ class Trainer():
         net = self.net
         env = self.env
         mcts = self.mcts
-        env.reset()
         net.set_mode("infer")
         net.eval()
-        mcts.reset(env.cur_state, simulate_times=simu_times)
         
-        while True:
+        for game in tqdm(range(play_times)):
             
-            action, actions, pi = mcts(env.cur_state, net)
-            state_input = env.get_network_input()                        # [tensors, scalars]
-            terminate_flag = env.step(action)                            # Will change self.cur_state. 
-            mcts.move(action)                                            # Move MCTS forward.    
-            results.append([state_input, action])                        # Record. (s, a).
-            # print("Step forward %d" % env.step_ct)
+            env.reset()
+            mcts.reset(env.cur_state, simulate_times=simu_times)
+            one_result = []            
             
-            if terminate_flag:
-                final_reward = env.accumulate_reward
-                for step in range(env.step_ct):
-                    results[step] += [final_reward + step]             # Final results. (s, a, r(s)).
-                    # Note:
-                    # a is not included in the history actions of s.
-                return results
+            while True:
+            
+                action, actions, pi = mcts(env.cur_state, net, verbose=True)
+                state_input = env.get_network_input()                        # [tensors, scalars]
+                terminate_flag = env.step(action)                            # Will change self.cur_state. 
+                mcts.move(action)                                            # Move MCTS forward.    
+                one_result.append([state_input, action])                        # Record. (s, a).
+                # print("Step forward %d" % env.step_ct)
+                
+                if terminate_flag:
+                    final_reward = env.accumulate_reward
+                    for step in range(env.step_ct):
+                        one_result[step] += [final_reward + step]             # Final results. (s, a, r(s)).
+                        # Note:
+                        # a is not included in the history actions of s.
+                    results.extend(one_result)
+                    import pdb; pdb.set_trace()
+                    break
+                
+        if save_path is not None:
+            np.save(save_path, results)
+            
+        return results        
             
     
     def infer(self,

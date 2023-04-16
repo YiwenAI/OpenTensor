@@ -73,7 +73,7 @@ class Node():
                 action_idx = node.pre_action_idx
                 node = node.parent
                 node.N[action_idx] += 1
-                v = (0 + -1 * (node.depth + 1))
+                v = (0 + -1 * (node.depth))
                 node.Q[action_idx] = v / node.N[action_idx] +\
                                     node.Q[action_idx] * (node.N[action_idx] - 1) / node.N[action_idx]   
             
@@ -147,7 +147,7 @@ class Node():
             action_idx = node.pre_action_idx
             node = node.parent
             node.N[action_idx] += 1
-            v = (value + -1 * (self.depth + 1))
+            v = (value + -1 * (self.depth))
             node.Q[action_idx] = v / node.N[action_idx] +\
                                  node.Q[action_idx] * (node.N[action_idx] - 1) / node.N[action_idx]
     
@@ -186,23 +186,24 @@ class MCTS():
         self.simulate_times = simulate_times
         if init_state is not None:
             self.root_node = Node(state=init_state,
-                                parent=None,
-                                pre_action=None,
-                                pre_action_idx=None)
+                                  parent=None,
+                                  pre_action=None,
+                                  pre_action_idx=None)
 
     
     def __call__(self,
                  state,
                  net: Net,
-                 log=False):
+                 log=False,
+                 verbose=False):
         '''
         进行一次MCTS
         返回: action, actions, visit_pi
         '''
 
         assert is_equal(state, self.root_node.state), "State is inconsistent."
-
-        for simu in tqdm(range(self.simulate_times)):
+        iter_item = range(self.simulate_times) if verbose else tqdm(range(self.simulate_times))
+        for simu in iter_item:
             # Select a leaf node.
             node = self.root_node
             while not node.is_leaf:

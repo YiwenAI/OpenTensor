@@ -59,6 +59,6 @@ mcts:
   simulate_times: 400
 
 env:
-  R_limit: 8
+  R_limit: 12
   T: 5
   S_size: 4
