@@ -10,24 +10,24 @@
 #   device: "cuda"
 
 trainer:
-  T: 5
+  T: 7
   S_size: 4
   coefficients: 
     - 0
     - 1
     - -1  
   exp_dir: "exp"
-  exp_name: "first_exp"
+  exp_name: "S4T7_exp2"
   device: "cuda"  
 
-  lr: 0.0001
+  lr: 0.00001
   weight_decay: 0.00001
   gamma: .1
   step_size: 10000000
   iters_n: 3000000
-  batch_size: 2048
-  a_weight: .5
-  v_weight: .5
+  batch_size: 1024
+  a_weight: .1
+  v_weight: .9
   save_freq: 50000
   self_play_buffer: 100000
   self_play_freq: 10
@@ -35,7 +35,7 @@ trainer:
   val_freq: 1000
 
 net:
-  T: 5
+  T: 7
   S_size: 4
   coefficients: 
     - 0
@@ -45,14 +45,14 @@ net:
 
   N_steps: 3
   N_samples: 32
-  n_attentive: 4
-  N_heads: 16
-  N_features: 16
+  n_attentive: 6
+  N_heads: 32
+  N_features: 64
   channel: 3
   scalar_size: 3
   policy_layers: 2
   value_layers: 3
-  inter_channel: 256
+  inter_channel: 512
   out_channel: 8
 
 mcts:
@@ -60,5 +60,5 @@ mcts:
 
 env:
   R_limit: 12
-  T: 5
+  T: 7
   S_size: 4

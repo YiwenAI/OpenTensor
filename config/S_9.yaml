@@ -10,8 +10,8 @@
 #   device: "cuda"
 
 trainer:
-  T: 5
-  S_size: 4
+  T: 7
+  S_size: 9
   coefficients: 
     - 0
     - 1
@@ -35,19 +35,19 @@ trainer:
   val_freq: 1000
 
 net:
-  T: 5
-  S_size: 4
+  T: 7
+  S_size: 9
   coefficients: 
     - 0
     - 1
     - -1
   device: 'cuda'
 
-  N_steps: 3
+  N_steps: 12
   N_samples: 32
   n_attentive: 4
   N_heads: 16
-  N_features: 16
+  N_features: 32
   channel: 3
   scalar_size: 3
   policy_layers: 2
@@ -59,6 +59,6 @@ mcts:
   simulate_times: 400
 
 env:
-  R_limit: 12
-  T: 5
-  S_size: 4
+  R_limit: 30
+  T: 7
+  S_size: 9

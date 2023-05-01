@@ -67,12 +67,19 @@ class Trainer():
         self.a_weight = a_weight
         self.v_weight = v_weight
         
-        self.optimizer = torch.optim.AdamW(net.parameters(),
-                                           weight_decay=weight_decay,
-                                           lr=lr)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
-                                                         step_size=step_size,
-                                                         gamma=gamma)        
+        self.optimizer_a = torch.optim.AdamW(net.parameters(),
+                                             weight_decay=weight_decay,
+                                             lr=lr)
+        self.scheduler_a = torch.optim.lr_scheduler.StepLR(self.optimizer_a,
+                                                           step_size=step_size,
+                                                           gamma=gamma)
+        self.optimizer_v = torch.optim.AdamW(net.parameters(),
+                                             weight_decay=weight_decay,
+                                             lr=lr)
+        self.scheduler_v = torch.optim.lr_scheduler.StepLR(self.optimizer_v,
+                                                           step_size=step_size,
+                                                           gamma=gamma)
+        
         self.batch_size = batch_size
         self.iters_n = iters_n
         self.grad_clip = grad_clip
@@ -146,7 +153,7 @@ class Trainer():
                 
                 
         if save_path is not None:
-            np.save(save_path, total_results)
+            np.save(save_path, np.array(total_results, dtype=object))
             
         return total_results
         
@@ -172,6 +179,8 @@ class Trainer():
         o = o.transpose(1,2)                    # o: [batch_size, N_logits, N_steps]
         a_loss = self.entropy_loss(o, a_gt)     # a_gt: [batch_size, N_steps], o: [batch_size, N_logits, N_steps]
         loss = self.v_weight * v_loss + self.a_weight * a_loss
+        
+        del a_gt, v_gt
 
         return loss, v_loss, a_loss
     
@@ -217,13 +226,16 @@ class Trainer():
         
     def learn(self,
               resume=None,
+              only_weight=False,
               example_path=None,
               self_example_path=None):
         '''
         训练的主函数
         '''
-        optimizer = self.optimizer
-        scheduler = self.scheduler    
+        optimizer_a = self.optimizer_a
+        scheduler_a = self.scheduler_a
+        optimizer_v = self.optimizer_v
+        scheduler_v = self.scheduler_v
         batch_size = self.batch_size
         self_play_freq = self.self_play_freq
         self_play_buffer = self.self_play_buffer
@@ -241,7 +253,7 @@ class Trainer():
         
         if resume is not None:
             # Load model.
-            old_iter = self.load_model(resume)
+            old_iter = self.load_model(resume, only_weight)
             # Copy log file.
             old_exp_dir = os.path.join(os.path.dirname(resume), '..')
             # os.system("cp -r %s %s" % (os.path.join(old_exp_dir, 'log', '*'), self.log_dir))
@@ -292,13 +304,16 @@ class Trainer():
 
             # 此处进行多进程优化
             # todo: 什么时候更新网络参数                     
-            optimizer.zero_grad()
+            optimizer_a.zero_grad()
+            optimizer_v.zero_grad()
             loss, v_loss, a_loss = self.learn_one_batch(batch_example)
             loss.backward()
             torch.nn.utils.clip_grad_norm(self.net.parameters(),
                                           max_norm=self.grad_clip)
-            optimizer.step()
-            scheduler.step()
+            optimizer_a.step()
+            optimizer_v.step()
+            scheduler_a.step()
+            scheduler_v.step()
             
             # 添加logger部分
             if i % 20 == 0:
@@ -437,17 +452,22 @@ class Trainer():
         save_path = os.path.join(save_dir, ckpt_name)
         torch.save({'model': self.net.state_dict(),
                     'iter': iter,
-                    'optimizer': self.optimizer.state_dict(),
-                    'scheduler': self.scheduler.state_dict()}, save_path)
+                    'optimizer_a': self.optimizer_a.state_dict(),
+                    'optimizer_v': self.optimizer_v.state_dict(),
+                    'scheduler_a': self.scheduler_a.state_dict(),
+                    'scheduler_v': self.scheduler_v.state_dict()}, save_path)
 
 
-    def load_model(self, ckpt_path):
+    def load_model(self, ckpt_path, only_weight=False):
         ckpt = torch.load(ckpt_path)
         self.net.load_state_dict(ckpt['model'])
-        self.optimizer.load_state_dict(ckpt['optimizer'])
-        self.scheduler.load_state_dict(ckpt['scheduler'])
+        if not only_weight:
+            self.optimizer_a.load_state_dict(ckpt['optimizer_a'])
+            self.optimizer_v.load_state_dict(ckpt['optimizer_a'])
+            self.scheduler_a.load_state_dict(ckpt['scheduler_v'])
+            self.scheduler_v.load_state_dict(ckpt['scheduler_v'])
         return ckpt['iter']
-    
+
     
     def load_examples(self, example_path):
         return np.load(example_path, allow_pickle=True)

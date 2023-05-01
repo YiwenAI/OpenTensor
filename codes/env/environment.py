@@ -94,7 +94,7 @@ class Environment():
             
             init_state = change_basis_tensor(tensor=init_state,
                                             trans_mat=trans_mat)
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
         
         return init_state
             

@@ -15,7 +15,8 @@ def handle_config():
 # todo: 有无高效mcts代码 如何进行分布式设计   AlphaZero MPI
 if __name__ == '__main__':
     
-    conf_path = "./config/my_conf.yaml"
+    # conf_path = "./config/my_conf.yaml"
+    conf_path = "./config/S_4.yaml"
     with open(conf_path, 'r', encoding="utf-8") as f:
         kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
     
@@ -38,13 +39,14 @@ if __name__ == '__main__':
     # trainer.infer()
     # trainer.infer(resume="./exp/debug/1680764978/ckpt/it0002000.pth")
     # import pdb; pdb.set_trace()
-    # trainer.generate_synthetic_examples(samples_n=100000, save_path="./data/100000_T5_scalar3.npy")
-    trainer.play(play_times=10000, save_path="./data/self-10000_T5_scalar3.npy")
-    # trainer.learn(resume=None,
-    #               example_path="./data/3000_T5_scalar3.npy")
-    # trainer.learn(resume="./exp/debug/1680958170/ckpt/it0030000.pth",
-    #               example_path="./data/3000_T5_scalar3.npy")
-    # trainer.infer(resume="./exp/first_exp/1681316786/ckpt/final.pth",
+    # trainer.generate_synthetic_examples(samples_n=1000000, save_path="./data/1000000_S4T7_scalar3.npy")
+    # trainer.play(play_times=10000, save_path="./data/self-10000_T5_scalar3.npy")
+    # trainer.learn(resume="./exp/first_exp/1681827145/ckpt/it0750000.pth",
+    #               example_path="./data/100000_T5_scalar3.npy",
+    #               only_weight=True)
+    trainer.learn(resume="./exp/S4T7_exp2/1682823074/ckpt/it0600000.pth",
+                  example_path="./data/100000_S4T7_scalar3.npy")
+    # trainer.infer(resume="./exp/first_exp/1682068899/ckpt/it1500000.pth",
     #               mcts_samples_n=32,
-    #               mcts_simu_times=262144,
+    #               mcts_simu_times=65536,
     #               vis=False)

@@ -63,6 +63,7 @@ class TupleDataset(Dataset):
         tensor, scalar = state
         action = self.logits_to_action(action)
         tensor, action = self.random_sign_permutation(tensor, action)
+        action = canonicalize_action(action)           #FIXME: Is it needed?
         action = self.action_to_logits(action)
         return [tensor, scalar], action, reward
     

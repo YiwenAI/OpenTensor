@@ -13,11 +13,11 @@ def numpy_cvt(a):
 
 def outer(x, y, z):
     # 得到三维张量，三维分别表示xyz
-    return np.einsum('i,j,k->ijk', x, y, z, dtype=np.int32)
+    return np.einsum('i,j,k->ijk', x, y, z, dtype=np.int32, casting="same_kind")
 
 def action2tensor(action):
     u, v, w = action
-    return np.einsum('i,j,k->ijk', u, v, w, dtype=np.int32)
+    return np.einsum('i,j,k->ijk', u, v, w, dtype=np.int32, casting="same_kind")
 
 def is_zero_tensor(tensor):
     return np.all(tensor == 0)
@@ -67,4 +67,4 @@ def one_hot(a_s, num_classes, shift=False):
 def change_basis_tensor(tensor,
                         trans_mat):
     return np.einsum('ij, kl, mn, jln -> ikm',
-                     trans_mat, trans_mat, trans_mat, tensor)
+                     trans_mat, trans_mat, trans_mat, tensor, casting="same_kind", dtype=np.int32)
