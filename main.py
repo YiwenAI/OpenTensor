@@ -39,14 +39,14 @@ if __name__ == '__main__':
     # trainer.infer()
     # trainer.infer(resume="./exp/debug/1680764978/ckpt/it0002000.pth")
     # import pdb; pdb.set_trace()
-    # trainer.generate_synthetic_examples(samples_n=1000000, save_path="./data/1000000_S4T7_scalar3.npy")
+    # trainer.generate_synthetic_examples(samples_n=100000, save_path="./data/traj_data/100000_S4T7_scalar3.npy")
     # trainer.play(play_times=10000, save_path="./data/self-10000_T5_scalar3.npy")
     # trainer.learn(resume="./exp/first_exp/1681827145/ckpt/it0750000.pth",
     #               example_path="./data/100000_T5_scalar3.npy",
     #               only_weight=True)
-    trainer.learn(resume="./exp/S4T7_exp2/1682823074/ckpt/it0600000.pth",
-                  example_path="./data/100000_S4T7_scalar3.npy")
-    # trainer.infer(resume="./exp/first_exp/1682068899/ckpt/it1500000.pth",
+    trainer.learn(resume='./exp/S4T7_exp2/1683080972/ckpt/it1200000.pth',
+                  example_path="./data/traj_data/100000_S4T7_scalar3.npy")
+    # trainer.infer(resume="./exp/S4T7_exp2/1683080972/ckpt/it1200000.pth",
     #               mcts_samples_n=32,
-    #               mcts_simu_times=65536,
+    #               mcts_simu_times=65536*4,
     #               vis=False)

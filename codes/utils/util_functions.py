@@ -28,14 +28,18 @@ def is_equal(a, b):
 
 def canonicalize_action(action):
     u, v, w = action
+    flag_u, flag_v = 1, 1
     for e in u:
         if e != 0:
-            u = (u * ((e > 0) * 2 - 1)).astype(np.int32)
+            flag_u = ((e > 0) * 2 - 1)
+            u = (u * flag_u).astype(np.int32)
             break
     for e in v:
         if e != 0:
-            v = (v * ((e > 0) * 2 - 1)).astype(np.int32)
+            flag_v = ((e > 0) * 2 - 1)
+            v = (v * flag_v).astype(np.int32)
             break
+    w = (w * flag_v * flag_u).astype(np.int32)
     return np.stack([u, v, w])
 
 def one_hot(a_s, num_classes, shift=False):

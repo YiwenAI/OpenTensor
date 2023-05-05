@@ -102,11 +102,14 @@ class Trainer():
                                     prob=[.8, .1, .1],
                                     samples_n=10000,
                                     R_limit=12,
-                                    save_path=None) -> list:
+                                    save_path=None,
+                                    save_type="traj") -> list:
         '''
         生成人工合成的Tensor examples
         返回: results
         '''
+        assert save_type in ["traj", "tuple"]
+        
         S_size = self.S_size
         coefficients = self.coefficients
         T = self.T
@@ -131,26 +134,30 @@ class Trainer():
                         raise Exception("Oh my god...")
                 sample = sample + outer(u, v, w)
                 action = np.stack([u, v, w], axis=0)
-                actions.append(action)
+                actions.append(canonicalize_action(action))
                 states.append(sample.copy())
                 rewards.append(-r)
                 
             # Reformulate the results.
-            states.reverse(); actions.reverse(); rewards.reverse()
-            actions_tensor = [action2tensor(action) for action in actions]
-            for idx, state in enumerate(states):
-                tensors = np.zeros((T, S_size, S_size, S_size), dtype=np.int32)
-                tensors[0] = state            # state.
-                if idx != 0:
-                    # History actions.
-                    tensors[1:(idx+1)] = np.stack(reversed(actions_tensor[max(idx-(T-1), 0):idx]), axis=0)        
-                scalars = np.array([idx, idx, idx])     #FIXME: Havn't decided the scalars.
-                
-                cur_state = [tensors, scalars]
-                action = actions[idx]
-                reward = rewards[idx]
-                total_results.append([cur_state, action, reward])
-                
+            if save_type == "tuple":
+                states.reverse(); actions.reverse(); rewards.reverse()
+                actions_tensor = [action2tensor(action) for action in actions]
+                for idx, state in enumerate(states):
+                    tensors = np.zeros((T, S_size, S_size, S_size), dtype=np.int32)
+                    tensors[0] = state            # state.
+                    if idx != 0:
+                        # History actions.
+                        tensors[1:(idx+1)] = np.stack(reversed(actions_tensor[max(idx-(T-1), 0):idx]), axis=0)        
+                    scalars = np.array([idx, idx, idx])     #FIXME: Havn't decided the scalars.
+                    
+                    cur_state = [tensors, scalars]
+                    action = actions[idx]
+                    reward = rewards[idx]
+                    total_results.append([cur_state, action, reward])
+            
+            else:
+                traj = [states, actions, rewards]
+                total_results.append(traj)
                 
         if save_path is not None:
             np.save(save_path, np.array(total_results, dtype=object))
@@ -220,6 +227,8 @@ class Trainer():
             *["\nTop 5 logit for step %d\n: " % step + str(np.argsort(o[step])[-5:]) for step in range(self.net.N_steps)]]
         )
         
+        del a, o, p, _, output, q, v
+        
         return log_txt
         
         
@@ -228,7 +237,8 @@ class Trainer():
               resume=None,
               only_weight=False,
               example_path=None,
-              self_example_path=None):
+              self_example_path=None,
+              save_type="traj"):
         '''
         训练的主函数
         '''
@@ -272,12 +282,14 @@ class Trainer():
             self.self_examples.extend(self.load_examples(self_example_path))
         
         # Dataloader.
-        dataset = TupleDataset(S_size=self.S_size,
+        dataset = TupleDataset(T=self.T,
+                               S_size=self.S_size,
                                N_steps=self.net.N_steps,
                                coefficients=self.coefficients,
-                               self_examples=self.self_examples,
-                               synthetic_examples=self.synthetic_examples)
+                               self_data=self.self_examples,
+                               synthetic_data=self.synthetic_examples)
         dataloader = MultiEpochsDataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=32)
+        dataloader.dataset.prepare_examples_from_trajs()
         loader = iter(dataloader)
         epoch_ct = 0
         
@@ -297,6 +309,8 @@ class Trainer():
                 #                        self_examples=self.self_examples,
                 #                        synthetic_examples=self.synthetic_examples)
                 # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+                if save_type == "traj":
+                    dataloader.dataset.prepare_examples_from_trajs()
                 loader = iter(dataloader)
                 batch_example = next(loader)
                 print("Epoch: %d finish." % epoch_ct)
