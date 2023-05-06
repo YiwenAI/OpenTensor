@@ -216,8 +216,9 @@ class Trainer():
         o = o.detach().cpu().numpy()[0]         # o: [N_steps, N_logits]
         
         log_txt = "\n".join(
-            ["\nGt action: \n", str(self.net.logits_to_action(action[0])),
-             "\nGt logit: \n", str(action[0]),
+            ["\nState: \n", str(state[0][0, 0]),
+            "\nGt action: \n", str(self.net.logits_to_action(action[0])),
+            "\nGt logit: \n", str(action[0]),
             "\nInfer actions: \n", str(policy),
             "\nInfer logits: \n", str(a),
             "\nprob: \n", str(p),
@@ -289,7 +290,6 @@ class Trainer():
                                self_data=self.self_examples,
                                synthetic_data=self.synthetic_examples)
         dataloader = MultiEpochsDataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=32)
-        dataloader.dataset.prepare_examples_from_trajs()
         loader = iter(dataloader)
         epoch_ct = 0
         
@@ -310,7 +310,7 @@ class Trainer():
                 #                        synthetic_examples=self.synthetic_examples)
                 # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
                 if save_type == "traj":
-                    dataloader.dataset.prepare_examples_from_trajs()
+                    dataloader.dataset._permutate_traj()
                 loader = iter(dataloader)
                 batch_example = next(loader)
                 print("Epoch: %d finish." % epoch_ct)

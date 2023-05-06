@@ -6,6 +6,7 @@ from tqdm import tqdm
 import sys
 import os
 import copy
+import itertools
 sys.path.append(os.path.abspath(os.path.join("..")))
 sys.path.append(os.path.abspath(os.path.join(".")))
 from codes.utils import *
@@ -35,10 +36,13 @@ class TupleDataset(Dataset):
         token_len = 3 * S_size // N_steps
         self.N_logits = len(coefficients) ** token_len
         self.ct = 0
+        self.save_type = save_type
         
         print("Preprocessing dataset...")
         self.self_data = self_data
         self.synthetic_data = synthetic_data
+        self.data = self_data + synthetic_data
+        self.data_iterer = itertools.cycle(self.data)
         self.self_examples = []
         self.synthetic_examples = []
             
@@ -57,65 +61,37 @@ class TupleDataset(Dataset):
             self.examples = self.self_examples + self.synthetic_examples
                 
         else:   # Traj format data.
-            self.prepare_examples_from_trajs()
+            self._prepare_examples_from_trajs()
                    
-
-    def prepare_examples_from_trajs(self):
+    def _prepare_examples_from_trajs(self):
         '''
         This function will permutate self.xxx_data (but not change),
         and get the corresponding examples.
         '''
         S_size = self.S_size
-        T = self.T
-        
-        def traj_to_episode(traj):
-            results = []
-            states, actions, rewards = traj
-            states.reverse(); actions.reverse(); rewards.reverse()
-            actions_tensor = [action2tensor(action) for action in actions]
-            for idx, state in enumerate(states):
-                tensors = np.zeros((T, S_size, S_size, S_size), dtype=np.int32)
-                tensors[0] = state            # state.
-                if idx != 0:
-                    # History actions.
-                    tensors[1:(idx+1)] = np.stack(reversed(actions_tensor[max(idx-(T-1), 0):idx]), axis=0)        
-                scalars = np.array([idx, idx, idx])     #FIXME: Havn't decided the scalars.
-                
-                cur_state = [tensors, scalars]
-                action = self.action_to_logits(canonicalize_action(actions[idx]))
-                reward = rewards[idx]
-                results.append([cur_state, action, reward])
-            return results
-        
+        T = self.T      
         
         self_examples, synthetic_examples = [], []
         
-        for traj in self.synthetic_data:
-            _, actions, rewards = traj     # [T, S, S, S], [T, 3, S], [T]
-            # Shuffle the traj.
-            np.random.shuffle(actions)
-            new_states = []
-            sample = np.zeros((S_size, S_size, S_size), dtype=np.int32)
-            for idx, action in enumerate(actions):
-                sample = sample + action2tensor(action)
-                new_states.append(sample.copy())
-            new_traj = [new_states, actions, rewards]
-            synthetic_examples.extend(traj_to_episode(new_traj))
+        for traj in tqdm(self.synthetic_data):
+            new_traj = self.permutate_traj(traj)
+            synthetic_examples.extend(self.traj_to_episode(new_traj))
             
-        for traj in self.self_data:
-            _, actions, rewards = traj
-            np.random.shuffle(actions)
-            new_states = []
-            sample = np.zeros((S_size, S_size, S_size), dtype=np.int32)
-            for idx, action in enumerate(actions):
-                sample = sample + action2tensor(action)
-                new_states.append(sample.copy())
-            new_traj = [new_states, actions, rewards]
-            self_examples.extend(traj_to_episode(new_traj))                
+        for traj in tqdm(self.self_data):
+            new_traj = self.permutate_traj(traj)
+            self_examples.extend(self.traj_to_episode(new_traj))                
             
         self.self_examples, self.synthetic_examples = self_examples, synthetic_examples
         self.examples = self_examples + synthetic_examples
         
+    def _permutate_traj(self, trajs_n=1000):
+        assert self.save_type == "traj"
+        for _ in range(trajs_n):
+            self_traj = next(self.data_iterer)
+            new_traj = self.permutate_traj(self_traj)
+            new_episodes = self.traj_to_episode(new_traj)
+            n = len(new_episodes)
+            self.examples = self.examples[n:] + new_episodes
         
     def __len__(self):
         return len(self.examples)
@@ -124,10 +100,47 @@ class TupleDataset(Dataset):
         state, action, reward = self.examples[idx]
         tensor, scalar = state
         action = self.logits_to_action(action)
-        tensor, action = self.random_sign_permutation(tensor, action)
+        tensor, action = self.random_sign_permutation(tensor, action)   # Data aug.
         action = canonicalize_action(action)           #FIXME: Is it needed?
         action = self.action_to_logits(action)
+        # self._permutate_traj()                         # Permutate traj.
         return [tensor, scalar], action, reward
+    
+    def traj_to_episode(self, traj):
+        results = []
+        T, S_size = self.T, self.S_size
+        states, actions, rewards = traj
+        states.reverse(); actions.reverse(); rewards.reverse()
+        actions_tensor = [action2tensor(action) for action in actions]
+        for idx, state in enumerate(states):
+            tensors = np.zeros((T, S_size, S_size, S_size), dtype=np.int32)
+            tensors[0] = state            # state.
+            if idx != 0:
+                # History actions.
+                tensors[1:(idx+1)] = np.stack(reversed(actions_tensor[max(idx-(T-1), 0):idx]), axis=0)        
+            scalars = np.array([idx, idx, idx])     #FIXME: Havn't decided the scalars.
+            
+            cur_state = [tensors, scalars]
+            action = self.action_to_logits(canonicalize_action(actions[idx]))
+            reward = rewards[idx]
+            results.append([cur_state, action, reward])
+        return results
+    
+    def permutate_traj(self, traj):
+        S_size = self.S_size
+        states, actions, rewards = traj     # [T, S, S, S], [T, 3, S], [T]
+        # Shuffle the traj.
+        new_actions = actions.copy()
+        np.random.shuffle(new_actions)
+        new_states = []
+        new_rewards = []
+        sample = np.zeros((S_size, S_size, S_size), dtype=np.int32)
+        for r, action in enumerate(new_actions):
+            sample = sample + action2tensor(action)
+            new_states.append(sample.copy())
+            new_rewards.append(-(r+1))
+        new_traj = [new_states, new_actions, new_rewards]      
+        return new_traj
     
     def action_to_logits(self,
                          action):
@@ -196,10 +209,11 @@ class TupleDataset(Dataset):
     
     
 if __name__ == '__main__':
-    dataset = TupleDataset(S_size=4,
+    dataset = TupleDataset(T=7,
+                           S_size=4,
                            N_steps=6,
                            coefficients=[0, 1, -1],
-                           synthetic_examples=np.load("data/100000_T5_scalar3.npy", allow_pickle=True).tolist(),
+                           synthetic_data=np.load("data/traj_data/100000_S4T7_scalar3.npy", allow_pickle=True).tolist(),
                            debug=True)
     # from torch.utils.data import DataLoader
     # dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
