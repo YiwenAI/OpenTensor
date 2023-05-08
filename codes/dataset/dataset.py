@@ -84,8 +84,9 @@ class TupleDataset(Dataset):
         self.self_examples, self.synthetic_examples = self_examples, synthetic_examples
         self.examples = self_examples + synthetic_examples
         
-    def _permutate_traj(self, trajs_n=1000):
+    def _permutate_traj(self, trajs_n=5000):
         assert self.save_type == "traj"
+        print("Permutate!")
         for _ in range(trajs_n):
             self_traj = next(self.data_iterer)
             new_traj = self.permutate_traj(self_traj)

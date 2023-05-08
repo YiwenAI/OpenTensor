@@ -309,8 +309,8 @@ class Trainer():
                 #                        self_examples=self.self_examples,
                 #                        synthetic_examples=self.synthetic_examples)
                 # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-                if save_type == "traj":
-                    dataloader.dataset._permutate_traj()
+                # if save_type == "traj":
+                #     dataloader.dataset._permutate_traj()
                 loader = iter(dataloader)
                 batch_example = next(loader)
                 print("Epoch: %d finish." % epoch_ct)
@@ -396,6 +396,8 @@ class Trainer():
             
     
     def infer(self,
+              init_state=None,
+              no_base_change=True,
               mcts_simu_times=10000,
               mcts_samples_n=16,
               step_limit=12,
@@ -416,7 +418,7 @@ class Trainer():
         env = self.env
         mcts = self.mcts
         
-        env.reset(no_base_change=True)
+        env.reset(init_state, no_base_change)
         net.set_mode("infer")
         net.set_samples_n(mcts_samples_n)
         net.eval()

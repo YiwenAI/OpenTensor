@@ -44,9 +44,22 @@ if __name__ == '__main__':
     # trainer.learn(resume="./exp/first_exp/1681827145/ckpt/it0750000.pth",
     #               example_path="./data/100000_T5_scalar3.npy",
     #               only_weight=True)
-    trainer.learn(resume='./exp/S4T7_exp2/1683080972/ckpt/it1200000.pth',
-                  example_path="./data/traj_data/100000_S4T7_scalar3.npy")
-    # trainer.infer(resume="./exp/S4T7_exp2/1683080972/ckpt/it1200000.pth",
+    # trainer.learn(resume="./exp/S4T7_exp3/1683439582/ckpt/it1650000.pth",
+    #               example_path="./data/traj_data/100000_S4T7_scalar3.npy")
+    # trainer.infer(resume="./exp/S4T7_exp3/1683439582/ckpt/it1650000.pth",
     #               mcts_samples_n=32,
-    #               mcts_simu_times=65536*4,
+    #               mcts_simu_times=65536,
     #               vis=False)
+    
+    import numpy as np
+    trainer.infer(resume="./exp/S4T7_exp3/1683439582/ckpt/it1650000.pth",
+                  mcts_samples_n=32,
+                  mcts_simu_times=65536 // 2,
+                  vis=False,
+                  init_state=np.array([
+                      [[0,0,0,0], [0,-1,0,0], [0,1,0,0], [-1,0,-1,1]],
+                      [[0,0,0,0], [0,0,0,0], [0,1,0,0], [0,0,0,0]],
+                      [[-1,0,-1,0], [0,0,0,0], [0,-1,0,0], [1,1,0,0]],
+                      [[-1,0,-1,0], [0,0,0,0], [1,0,0,0], [0,-1,1,0]]
+                  ]),
+                  no_base_change=False)    
