@@ -17,10 +17,10 @@ trainer:
     - 1
     - -1  
   exp_dir: "exp"
-  exp_name: "S4T7_exp3"
-  device: "cuda"  
-
-  lr: 0.00001
+  exp_name: "S4T7_selfplay"
+  device: "cuda:0"  
+  self_play_device: "cuda:1"
+  lr: 0.0001
   weight_decay: 0.00001
   gamma: .1
   step_size: 10000000
@@ -28,9 +28,10 @@ trainer:
   batch_size: 1024
   a_weight: .1
   v_weight: .9
-  save_freq: 50000
+  save_freq: 25000
+  temp_save_freq: 2500
   self_play_buffer: 100000
-  self_play_freq: 10
+  self_play_freq: 25
   grad_clip: 4.0
   val_freq: 1000
 
@@ -41,7 +42,7 @@ net:
     - 0
     - 1
     - -1
-  device: 'cuda'
+  device: 'cuda:0'
 
   N_steps: 3
   N_samples: 32
@@ -57,8 +58,9 @@ net:
 
 mcts:
   simulate_times: 400
+  R_limit: 8
 
 env:
-  R_limit: 12
+  R_limit: 8
   T: 7
   S_size: 4

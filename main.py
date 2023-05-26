@@ -3,7 +3,7 @@ import yaml
 from codes.env import Environment
 from codes.mcts import MCTS
 from codes.net import Net
-from codes.trainer import Trainer
+from codes.trainer import Trainer, Player
 
 
 def handle_config():
@@ -29,37 +29,42 @@ if __name__ == '__main__':
                       net=net, env=env, mcts=mcts,
                       all_kwargs=kwargs)
     
-    
-    # import pdb; pdb.set_trace()
-    # res = trainer.play()
-    # res = trainer.generate_synthetic_examples()
-    # trainer.learn()
-    # import pdb; pdb.set_trace()
-    # trainer.load_model("./exp/debug/1680630182/ckpt/it0020000.pth")
-    # trainer.infer()
-    # trainer.infer(resume="./exp/debug/1680764978/ckpt/it0002000.pth")
-    # import pdb; pdb.set_trace()
-    # trainer.generate_synthetic_examples(samples_n=100000, save_path="./data/traj_data/100000_S4T7_scalar3.npy")
-    # trainer.play(play_times=10000, save_path="./data/self-10000_T5_scalar3.npy")
+
     # trainer.learn(resume="./exp/first_exp/1681827145/ckpt/it0750000.pth",
     #               example_path="./data/100000_T5_scalar3.npy",
     #               only_weight=True)
-    # trainer.learn(resume="./exp/S4T7_exp3/1683439582/ckpt/it1650000.pth",
-    #               example_path="./data/traj_data/100000_S4T7_scalar3.npy")
-    # trainer.infer(resume="./exp/S4T7_exp3/1683439582/ckpt/it1650000.pth",
-    #               mcts_samples_n=32,
-    #               mcts_simu_times=65536,
-    #               vis=False)
+    # trainer.learn(resume=None,
+    #               example_path="./data/traj_data/100000_S4T7_scalar3.npy",
+    #               self_example_path=None,
+    #               self_play=True)
+    # while True:
+    #     trainer.infer(resume="./exp/S4T7_selfplay/1684844835/ckpt/it0775000.pth",
+    #                 mcts_samples_n=32,
+    #                 mcts_simu_times=65536,
+    #                 vis=False,
+    #                 noise=False)
+        
+    # import numpy as np
+    # while True:
+    #     trainer.infer(resume="./exp/S4T7_exp3/1683894384/ckpt/it2200000.pth",
+    #                 mcts_samples_n=32,
+    #                 mcts_simu_times=65536 * 2,
+    #                 vis=False,
+    #                 init_state=np.array([
+    #                     [[0,0,0,-1], [0,1,0,0], [0,0,0,0], [-1,0,0,-1]],
+    #                     [[0,0,0,0], [0,0,0,0], [1,0,0,0], [0,1,0,0]],
+    #                     [[0,0,1,0], [0,0,0,1], [0,0,0,0], [0,0,0,0]],
+    #                     [[-1,0,0,-1], [0,0,0,0], [0,0,1,0], [-1,0,0,0]]
+    #                 ]),
+    #                 no_base_change=False)  
     
-    import numpy as np
-    trainer.infer(resume="./exp/S4T7_exp3/1683439582/ckpt/it1650000.pth",
-                  mcts_samples_n=32,
-                  mcts_simu_times=65536 // 2,
-                  vis=False,
-                  init_state=np.array([
-                      [[0,0,0,0], [0,-1,0,0], [0,1,0,0], [-1,0,-1,1]],
-                      [[0,0,0,0], [0,0,0,0], [0,1,0,0], [0,0,0,0]],
-                      [[-1,0,-1,0], [0,0,0,0], [0,-1,0,0], [1,1,0,0]],
-                      [[-1,0,-1,0], [0,0,0,0], [1,0,0,0], [0,-1,1,0]]
-                  ]),
-                  no_base_change=False)    
+    self_play_net = Net(**kwargs["net"])
+    player = Player(net=self_play_net,
+                    env=env,
+                    mcts=mcts,
+                    exp_dir="./exp/S4T7_selfplay/1685088597",
+                    simu_times=400,
+                    play_times=1,
+                    num_workers=64,
+                    device="cuda:0")
+    player.run()     # Running forever...    

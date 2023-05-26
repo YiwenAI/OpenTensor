@@ -72,3 +72,26 @@ def change_basis_tensor(tensor,
                         trans_mat):
     return np.einsum('ij, kl, mn, jln -> ikm',
                      trans_mat, trans_mat, trans_mat, tensor, casting="same_kind", dtype=np.int32)
+    
+def random_action(coefficients=[0,1,-1],
+                  prob=[.8,.1,.1],
+                  S_size=4):
+    ct = 0
+    while True:
+        u = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
+        v = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
+        w = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
+        ct += 1
+        if not is_zero_tensor(outer(u, v, w)):
+            break
+        if ct > 100000:
+            raise Exception("Oh my god...")    
+    return np.stack([u, v, w], axis=0)
+
+def terminate_rank_approx(tensor):
+    assert len(tensor.shape) == 3
+    rank_approx = 0
+    for z_idx in range(tensor.shape[-1]):
+        rank_approx += np.linalg.matrix_rank(np.mat(tensor[..., z_idx], dtype=np.int32))
+    
+    return rank_approx

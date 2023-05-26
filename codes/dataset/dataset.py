@@ -73,13 +73,19 @@ class TupleDataset(Dataset):
         
         self_examples, synthetic_examples = [], []
         
+        for traj in tqdm(self.self_data):
+            # Reverse the order. From decompose order to synthesis order.
+            _traj = copy.deepcopy(traj)
+            _states, _actions, _rewards = _traj
+            _states.reverse(), _actions.reverse(), _rewards.reverse()
+            _traj = [_states, _actions, _rewards]
+            
+            new_traj = self.permutate_traj(_traj)
+            self_examples.extend(self.traj_to_episode(new_traj))         
+        
         for traj in tqdm(self.synthetic_data):
             new_traj = self.permutate_traj(traj)
-            synthetic_examples.extend(self.traj_to_episode(new_traj))
-            
-        for traj in tqdm(self.self_data):
-            new_traj = self.permutate_traj(traj)
-            self_examples.extend(self.traj_to_episode(new_traj))                
+            synthetic_examples.extend(self.traj_to_episode(new_traj))             
             
         self.self_examples, self.synthetic_examples = self_examples, synthetic_examples
         self.examples = self_examples + synthetic_examples
@@ -111,7 +117,7 @@ class TupleDataset(Dataset):
         results = []
         T, S_size = self.T, self.S_size
         states, actions, rewards = traj
-        states.reverse(); actions.reverse(); rewards.reverse()
+        states = list(reversed(states)); actions = list(reversed(actions)); rewards = list(reversed(rewards))
         actions_tensor = [action2tensor(action) for action in actions]
         for idx, state in enumerate(states):
             tensors = np.zeros((T, S_size, S_size, S_size), dtype=np.int32)
@@ -129,18 +135,20 @@ class TupleDataset(Dataset):
     
     def permutate_traj(self, traj):
         S_size = self.S_size
-        states, actions, rewards = traj     # [T, S, S, S], [T, 3, S], [T]
+        states, actions, rewards = traj     # [T, S, S, S], [T, 3, S], [T], synthesis order.
+        final_state = states[0] - action2tensor(actions[0])     # If synthesis data, final_state = 0, rewards[0] = -1.
+
         # Shuffle the traj.
         new_actions = actions.copy()
         np.random.shuffle(new_actions)
         new_states = []
-        new_rewards = []
-        sample = np.zeros((S_size, S_size, S_size), dtype=np.int32)
-        for r, action in enumerate(new_actions):
+        new_rewards = copy.deepcopy(rewards)
+        # sample = np.zeros((S_size, S_size, S_size), dtype=np.int32)
+        sample = final_state
+        for action in new_actions:
             sample = sample + action2tensor(action)
             new_states.append(sample.copy())
-            new_rewards.append(-(r+1))
-        new_traj = [new_states, new_actions, new_rewards]      
+        new_traj = [new_states, new_actions, new_rewards]      # synthesis order.
         return new_traj
     
     def action_to_logits(self,

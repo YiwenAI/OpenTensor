@@ -8,6 +8,7 @@ from tqdm import tqdm
 import sys
 import os
 import copy
+from typing import Tuple
 sys.path.append(os.path.abspath(os.path.join("..")))
 sys.path.append(os.path.abspath(os.path.join(".")))
 from codes.env import Environment
@@ -57,11 +58,16 @@ class Node():
         
         
     def expand(self,
-               net: Net):
+               net: Net,
+               noise=False,
+               noise_depth=3,
+               network_output=None,
+               R_limit=12):
         '''
         Expand this node.
         Return the value of this state.
         '''
+        # 1. Check terminal situation.
         if not self.is_leaf:
             raise Exception("This node has been expanded.")
         self.is_leaf = False
@@ -69,41 +75,44 @@ class Node():
         if self.is_terminal:    # Mean the state is terminal. Only propagate.
             node = self
             node.is_leaf = True
+            if is_zero_tensor(node.state):
+                value = 0
+            else:
+                value = -1 * terminate_rank_approx(node.state)
             while node.parent is not None:
                 action_idx = node.pre_action_idx
                 node = node.parent
                 node.N[action_idx] += 1
-                v = (0 + -1 * (self.depth - node.depth))
+                v = (value + -1 * (self.depth - node.depth))
                 node.Q[action_idx] = v / node.N[action_idx] +\
                                     node.Q[action_idx] * (node.N[action_idx] - 1) / node.N[action_idx]   
             
             return         
         
         #FIXME: Here we can apply a transposition table.
+        # 2. Get network output.
+        # 2.1. If use network to infer:
+        if network_output is None:
+            tensors, scalars = self.get_network_input(net)
+            
+            net.set_mode("infer")
+            with torch.no_grad():
+                output = net([tensors, scalars])
+                _, value, policy, prob = *net.value(output), *net.policy(output)    # policy: [1, N_samples, 3, S_size]
+                del output, tensors, scalars
+                value, policy = value[0], policy[0]
+            policy = [canonicalize_action(action) for action in policy]
         
-        # Get state for net evaluation.
-        # State: 
-        #   Tensors: [cur_state, last t=1 action, last t=2 action, ... last t=T-1 action]
-        #   Scalars: [depth(step_ct)]
-        T = net.T
-        tensors = np.zeros([T, *self.state.shape], dtype=np.int32)
-        tensors[0] = self.state       # Current state.
-        node = self
-        for t in range(1, T):
-            if node.parent is None:
-                break
-            tensors[t] = action2tensor(node.pre_action)
-            node = node.parent
-        scalars = np.array([self.depth, self.depth, self.depth]) #FIXME: Havn't decided the scalars.
+        # 2.2. If we already have network output:
+        else:
+            value, policy = network_output
         
-        net.set_mode("infer")
-        with torch.no_grad():
-            output = net([tensors, scalars])
-            _, value, policy, prob = *net.value(output), *net.policy(output)    # policy: [N_samples, 3, S_size]
-            del output, tensors, scalars
-        policy = [canonicalize_action(action) for action in policy]
+        # 2.3. Add noise for root node's expand.
+        if self.depth < noise_depth and noise:
+            noise_actions = [canonicalize_action(random_action()) for _ in range(len(policy) // 2)]
+            policy = policy + noise_actions
         
-        # Get empirical policy probability.
+        # 3. Get empirical policy probability.
         N_samples = net.N_samples
         rec = [False for _ in range(N_samples)]    # "True" represents having been recorded.
         actions = []
@@ -127,21 +136,22 @@ class Node():
         self.pi = pi
         self.children_n = len(actions)
               
-        # Init records.
+        # 4. Init records.
         self.N = [0 for _ in range(len(actions))]
         self.Q = [0 for _ in range(len(actions))]
         
-        # Expand the children nodes.
+        # 5. Expand the children nodes.
         for idx, action in enumerate(actions):
             child_state = self.state - action2tensor(action)
+            child_depth = self.depth + 1
             child_node = Node(state=child_state,
                               parent=self,
                               pre_action=action,
                               pre_action_idx=idx,
-                              is_terminal=is_zero_tensor(child_state))
+                              is_terminal=is_zero_tensor(child_state) or child_depth >= R_limit)
             self.children.append(child_node)
             
-        # Backward propagate.
+        # 6. Backward propagate.
         node = self
         while node.parent is not None:
             action_idx = node.pre_action_idx
@@ -167,6 +177,25 @@ class Node():
                   for i in range(self.children_n)]
         
         return self.children[np.argmax(scores)], scores
+    
+    
+    def get_network_input(self, net):
+        # Get state for net evaluation.
+        # State: 
+        #   Tensors: [cur_state, last t=1 action, last t=2 action, ... last t=T-1 action]
+        #   Scalars: [depth(step_ct)]
+        T = net.T
+        tensors = np.zeros([T, *self.state.shape], dtype=np.int32)
+        tensors[0] = self.state       # Current state.
+        node = self
+        for t in range(1, T):
+            if node.parent is None:
+                break
+            tensors[t] = action2tensor(node.pre_action)
+            node = node.parent
+        scalars = np.array([self.depth, self.depth, self.depth]) #FIXME: Havn't decided the scalars.
+        
+        return tensors, scalars
         
     
 
@@ -178,12 +207,14 @@ class MCTS():
     def __init__(self,
                  init_state,
                  simulate_times=400,
+                 R_limit=12,
                  **kwargs):
         '''
         超参数传递
         '''
         
         self.simulate_times = simulate_times
+        self.R_limit = R_limit
         if init_state is not None:
             self.root_node = Node(state=init_state,
                                   parent=None,
@@ -195,7 +226,8 @@ class MCTS():
                  state,
                  net: Net,
                  log=False,
-                 verbose=False):
+                 verbose=False,
+                 noise=False):
         '''
         进行一次MCTS
         返回: action, actions, visit_pi
@@ -203,12 +235,13 @@ class MCTS():
 
         assert is_equal(state, self.root_node.state), "State is inconsistent."
         iter_item = range(self.simulate_times) if verbose else tqdm(range(self.simulate_times))
+        R_limit = self.R_limit
         for simu in iter_item:
             # Select a leaf node.
             node = self.root_node
             while not node.is_leaf:
                 node, scores = node.select()         #FIXME: Need to control the factor c.
-            node.expand(net)
+            node.expand(net, noise=noise, R_limit=R_limit)
         
         actions = self.root_node.actions
         N = self.root_node.N
@@ -242,12 +275,15 @@ class MCTS():
         
     def reset(self,
               state,
-              simulate_times=None):
+              simulate_times=None,
+              R_limit=None):
         '''
         Reset MCTS.
         '''
         if simulate_times is not None:
             self.simulate_times = simulate_times
+        if R_limit is not None:
+            self.R_limit = R_limit
         self.root_node = Node(state=state,
                             parent=None,
                             pre_action=None,

@@ -30,4 +30,5 @@ class _RepeatSampler(object):
 
     def __iter__(self):
         while True:
+        # for i in range(len(self.sampler)):
             yield from iter(self.sampler)

@@ -43,6 +43,7 @@ class Torso(nn.Module):
         self.attentive_modes = nn.ModuleList([AttentiveModes(S_size, channel) for _ in range(n_attentive)])
         self.scalar2grid = nn.ModuleList([nn.Linear(scalar_size, S_size**2) for _ in range(3)])                    # s -> S*S
         self.grid2grid = nn.ModuleList([nn.Linear(S_size**2*(T*S_size+1), S_size**2*channel) for _ in range(3)])   # S*S*TS+1 -> S*S*c
+        #WARNING: grid2grid should be T*S_size+1 -> channel!
         
         
     def forward(self, x):
@@ -62,9 +63,10 @@ class Torso(nn.Module):
         else:
             input_t, input_s = input_t.float().to(self.device), input_s.float().to(self.device)
         if self.mode == "infer":
-            assert len(input_t.shape) == 4 and len(input_s.shape) == 1, \
-                "Infer mode does not support batch."
-            input_t = input_t[None]; input_s = input_s[None]        # Add a batch dim.
+            # assert len(input_t.shape) == 4 and len(input_s.shape) == 1, \
+            #     "Infer mode does not support batch."
+            if len(input_t.shape) == 4 and len(input_s.shape) == 1:
+                input_t = input_t[None]; input_s = input_s[None]        # Add a batch dim.
         batch_size = input_t.shape[0]
         
         # 1. Project to grids.
@@ -284,6 +286,8 @@ class PolicyHead(nn.Module):
         N_steps = self.N_steps
         N_logits = self.N_logits
         N_samples = self.N_samples
+        N_features = self.N_features
+        N_heads = self.N_heads
         device = self.device
         assert self.mode in ['train', 'infer']
         
@@ -299,25 +303,29 @@ class PolicyHead(nn.Module):
             return o[:, :-1, :], z[:, 0]                      # o: [B, N_steps+1, N_logits+1]; z[:, 0]: [B, N_features*N_heads]
         
         elif self.mode == 'infer':
-            e = x[0]                            # e: [B, m, c], B=1
-            a = -2 * torch.ones((N_samples, N_steps+1)).long().to(device)       # a: {-2,-1,0,1, ... N_logits-1} ^ [N_samples, N_steps+1]
+            e = x[0]                            # e: [B, m, c]
+            batch_size = e.shape[0]
+            a = -2 * torch.ones((batch_size * N_samples, N_steps+1)).long().to(device)       # a: {-2,-1,0,1, ... N_logits-1} ^ [N_samples, N_steps+1]
             a[:, 0] = -1                        # Start sign.
-            p = torch.ones((N_samples,)).float().to(device)
+            p = torch.ones((batch_size * N_samples,)).float().to(device)
             
             # We sample N_samples batchly.
-            e = e.repeat(N_samples, 1, 1)       # e: [B, m, c], B=N_samples
+            e = e.repeat_interleave(N_samples, dim=0)              # e: [B*N_samples, m, c]
             for i in range(1, N_steps+1):
-                o, z = self.predict_action_logits(one_hot(a, num_classes=N_logits).float().to(device), e)
-                prob = F.softmax(o[:, i-1, :-1], dim=1)            # o[:, i-1, :-1]: [N_samples, N_logits]
-                sampled_a = torch.multinomial(prob, 1).view(-1)    # sampled_a = [N_samples,]
-                for s in range(N_samples):
-                    p[s] = p[s] * prob[s, sampled_a[s]]
+                o, z = self.predict_action_logits(one_hot(a, num_classes=N_logits).float().to(device), e)  # z: [B*N_samples, N_steps+1, N_features*N_heads]
+                prob = F.softmax(o[:, i-1, :-1], dim=1)            # o[:, i-1, :-1]: [B*N_samples, N_logits]
+                sampled_a = torch.multinomial(prob, 1).view(-1)    # sampled_a = [B*N_samples,]
+                # for s in range(batch_size * N_samples):
+                #     p[s] = p[s] * prob[s, sampled_a[s]]
                 a[:, i] = sampled_a
                     
                 if i == 1:
-                    z1 = z[0, 0].clone()              # [N_features*N_heads]
-                
-            return a[:, 1:], p, z1                    # [N_samples, N_steps], [N_samples], [N_features*N_heads]
+                    # z1 = z[0, 0].clone()              # [N_features*N_heads]
+                    z1 = z.reshape((-1, N_samples, N_steps+1, N_features*N_heads))
+                    z1 = z1[:, 0, 0, :].clone()         # [B, N_features*N_heads]   
+            return a[:, 1:].reshape((-1, N_samples, N_steps)),\
+                   p.reshape((-1, N_samples)),\
+                   z1                      # [B, N_samples, N_steps], [B, N_samples], [B, N_features*N_heads]
     
     
     def set_mode(self, mode):
@@ -401,15 +409,15 @@ class ValueHead(nn.Module):
         N_layers = self.N_layers
         
         z = x[0]
-        if self.mode == "infer":
-            z = z[None]        
+        # if self.mode == "infer":
+        #     z = z[None]        
         z = self.relus[0](self.in_linear(z))
         for layer in range(N_layers-1):
             z = self.relus[layer+1](self.linaers[layer](z))
             
         q = self.out_linear(z)
-        if self.mode == "infer":
-            q = q[0]
+        # if self.mode == "infer":
+        #     q = q[0]
         return q
     
     
@@ -512,7 +520,7 @@ class Net(nn.Module):
             q = self.value_head([z1])
             
             return a, p, q        #FIXME: Neet to process q.
-                                  # a: {0,1,..., N_logits-1} ^ [N_samples, N_steps]; p: [N_samples,]; q: [out_channels,]
+                                  # a: {0,1,..., N_logits-1} ^ [B, N_samples, N_steps]; p: [B, N_samples,]; q: [B, out_channels,]
         
     
     def set_mode(self, mode):
@@ -590,10 +598,10 @@ class Net(nn.Module):
         '''
         q = output[-1]
         q = q.detach().cpu().numpy()
-        out_channels = q.shape[0]
+        batch_size, out_channels = q.shape[0], q.shape[1]
         
         j = math.ceil(u_q * out_channels)
-        return q, q[(j-1):].mean()
+        return q, q[:, (j-1):].mean(axis=1)
     
     
     def policy(self, output):
@@ -606,12 +614,16 @@ class Net(nn.Module):
         a, p, _ = output
         a, p = a.detach().cpu().numpy(), p.detach().cpu().numpy()
         
-        actions = []
-        for logits in a:
-            actions.append(self.logits_to_action(logits))
-        actions = np.stack(actions, axis=0)
+        batch_actions = []
+        for batch in a:
+            actions = []
+            for logits in batch:
+                actions.append(self.logits_to_action(logits))
+            actions = np.stack(actions, axis=0)
+            batch_actions.append(actions)
+        batch_actions = np.stack(batch_actions, axis=0)
         
-        return actions, p
+        return batch_actions, p
         
     
     

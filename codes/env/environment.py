@@ -122,9 +122,10 @@ class Environment():
         返回: reward
         '''
         state = self.cur_state
-        terminate_reward = 0
-        for z_idx in range(self.S_size):
-            terminate_reward -= np.linalg.matrix_rank(np.mat(state[..., z_idx], dtype=np.int32))
+        # terminate_reward = 0
+        # for z_idx in range(self.S_size):
+        #     terminate_reward -= np.linalg.matrix_rank(np.mat(state[..., z_idx], dtype=np.int32))
+        terminate_reward = -terminate_rank_approx(state)
         return terminate_reward
     
     def is_terminate(self):

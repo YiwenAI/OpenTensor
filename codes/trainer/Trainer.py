@@ -13,11 +13,13 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join("..")))
 sys.path.append(os.path.abspath(os.path.join(".")))
-from codes.trainer.loss import QuantileLoss
+from codes.trainer.loss import *
+from codes.trainer.Player import *
 from codes.env import *
 from codes.mcts import *
 from codes.utils import *
 from codes.dataset import *
+from codes.multi_runner import *
 
 class Trainer():
     '''
@@ -35,7 +37,8 @@ class Trainer():
                  iters_n=50000,
                  exp_dir="exp",
                  exp_name="debug",
-                 device="cuda",
+                 device="cuda:0",
+                 self_play_device="cuda:1",
                  lr=5e-3,
                  weight_decay=1e-5,
                  step_size=40000,
@@ -43,6 +46,7 @@ class Trainer():
                  a_weight=.5,
                  v_weight=.5,
                  save_freq=10000,
+                 temp_save_freq=2500,
                  self_play_freq=10,
                  self_play_buffer=100000,
                  grad_clip=4.0,
@@ -84,6 +88,7 @@ class Trainer():
         self.iters_n = iters_n
         self.grad_clip = grad_clip
         self.save_freq = save_freq
+        self.temp_save_freq = temp_save_freq
         self.self_play_freq = self_play_freq
         self.self_play_buffer = self_play_buffer
         self.val_freq = val_freq
@@ -91,10 +96,11 @@ class Trainer():
         self.exp_dir = exp_dir
         self.save_dir = os.path.join(exp_dir, exp_name, str(int(time.time())))  
         self.log_dir = os.path.join(self.save_dir, "log")
+        self.data_dir = os.path.join(self.save_dir, "data")
         
         self.device = device
+        self.self_play_device = self_play_device
         self.net.to(device)
-        
         self.all_kwargs = all_kwargs
     
     
@@ -156,7 +162,7 @@ class Trainer():
                     total_results.append([cur_state, action, reward])
             
             else:
-                traj = [states, actions, rewards]
+                traj = [states, actions, rewards]          # Note: Synthesis order...
                 total_results.append(traj)
                 
         if save_path is not None:
@@ -209,6 +215,8 @@ class Trainer():
         q, v = self.net.value(output)
         policy, p = self.net.policy(output)
         
+        policy, p, q, v = policy[0], p[0], q[0], v[0]
+        
         self.net.set_mode("train")
         tensor, scalar, action = tensor[None], scalar[None], action[None]
         state = [tensor, scalar]
@@ -233,13 +241,13 @@ class Trainer():
         return log_txt
         
         
-        
     def learn(self,
               resume=None,
               only_weight=False,
               example_path=None,
               self_example_path=None,
-              save_type="traj"):
+              save_type="traj",
+              self_play=False):
         '''
         训练的主函数
         '''
@@ -272,6 +280,10 @@ class Trainer():
                 shutil.copy(os.path.join(old_exp_dir, "log", log_f), self.log_dir)
         else:
             old_iter = 0
+            
+        # Save ckpt.
+        ckpt_name = "latest.pth"
+        self.save_model(ckpt_name, old_iter)
         
         # 1. Get synthetic examples.
         if example_path is not None:
@@ -289,7 +301,7 @@ class Trainer():
                                coefficients=self.coefficients,
                                self_data=self.self_examples,
                                synthetic_data=self.synthetic_examples)
-        dataloader = MultiEpochsDataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=32)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
         loader = iter(dataloader)
         epoch_ct = 0
         
@@ -302,15 +314,25 @@ class Trainer():
             try:
                 batch_example = next(loader)
             except StopIteration:
-                # self.self_examples = self.self_examples[-self_play_buffer:]
-                # dataset = TupleDataset(S_size=self.S_size,
-                #                        N_steps=self.net.N_steps,
-                #                        coefficients=self.coefficients,
-                #                        self_examples=self.self_examples,
-                #                        synthetic_examples=self.synthetic_examples)
-                # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-                # if save_type == "traj":
-                #     dataloader.dataset._permutate_traj()
+                dataloader.dataset._permutate_traj()
+                if self_play:
+                    self_examples = self.get_self_examples()   # New self-play data.
+                    if self_examples is not None:
+                        print("Detect new self-data!")
+                        self.self_examples.extend(self_examples)
+                        self.self_examples = self.self_examples[-self_play_buffer:]
+                        np.save(os.path.join(self.data_dir, "total_self_data.npy"), np.array(self.self_examples, dtype=object))  # Whole buffer.
+                        synthetic_examples_n = 10000 if i > 50000 else 100000
+                        dataset = TupleDataset(T=self.T,
+                                            S_size=self.S_size,
+                                            N_steps=self.net.N_steps,
+                                            coefficients=self.coefficients,
+                                            self_data=self.self_examples,
+                                            synthetic_data=random.sample(self.synthetic_examples, synthetic_examples_n))
+                        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)  
+                    else:                  
+                        print("No detect new self-data...")
+                    
                 loader = iter(dataloader)
                 batch_example = next(loader)
                 print("Epoch: %d finish." % epoch_ct)
@@ -340,6 +362,10 @@ class Trainer():
             if i % self.save_freq == 0:
                 ckpt_name = "it%07d.pth" % i
                 self.save_model(ckpt_name, i)
+            
+            if i % self.temp_save_freq == 0:
+                ckpt_name = "latest.pth"
+                self.save_model(ckpt_name, i)
                 
             if i % self.val_freq == 0:
                 val_episode = dataset[random.randint(0, len(dataset)-1)]
@@ -347,52 +373,6 @@ class Trainer():
                 self.log_writer.add_text("Infer", log_txt, global_step=i)
         
         self.save_model("final.pth", i)
-            
-            
-    def play(self,
-             simu_times=400,
-             play_times=10000,
-             save_path=None) -> list:
-        '''
-        进行一次Tensor Game, 得到游玩记录
-        返回: results
-        '''
-        results = []
-        net = self.net
-        env = self.env
-        mcts = self.mcts
-        net.set_mode("infer")
-        net.eval()
-        
-        for game in tqdm(range(play_times)):
-            
-            env.reset()
-            mcts.reset(env.cur_state, simulate_times=simu_times)
-            one_result = []            
-            
-            while True:
-            
-                action, actions, pi = mcts(env.cur_state, net, verbose=True)
-                state_input = env.get_network_input()                        # [tensors, scalars]
-                terminate_flag = env.step(action)                            # Will change self.cur_state. 
-                mcts.move(action)                                            # Move MCTS forward.    
-                one_result.append([state_input, action])                        # Record. (s, a).
-                # print("Step forward %d" % env.step_ct)
-                
-                if terminate_flag:
-                    final_reward = env.accumulate_reward
-                    for step in range(env.step_ct):
-                        one_result[step] += [final_reward + step]             # Final results. (s, a, r(s)).
-                        # Note:
-                        # a is not included in the history actions of s.
-                    results.extend(one_result)
-                    import pdb; pdb.set_trace()
-                    break
-                
-        if save_path is not None:
-            np.save(save_path, results)
-            
-        return results        
             
     
     def infer(self,
@@ -402,7 +382,8 @@ class Trainer():
               mcts_samples_n=16,
               step_limit=12,
               resume=None,
-              vis=False):
+              vis=False,
+              noise=False):
         
         log_actions = []
         
@@ -422,14 +403,14 @@ class Trainer():
         net.set_mode("infer")
         net.set_samples_n(mcts_samples_n)
         net.eval()
-        mcts.reset(env.cur_state, simulate_times=mcts_simu_times)
+        mcts.reset(env.cur_state, simulate_times=mcts_simu_times, R_limit=step_limit)
         env.R_limit = step_limit + 1
         
         for step in tqdm(range(step_limit)):
             print("Current state is (step%d):" % step)
             print(env.cur_state)
             
-            action, actions, pi, log_txt = mcts(env.cur_state, net, log=True)
+            action, actions, pi, log_txt = mcts(env.cur_state, net, log=True, noise=noise)
             if vis:
                 mcts.visualize()
             print("We choose action(step%d):" % step)
@@ -474,7 +455,7 @@ class Trainer():
                     'scheduler_v': self.scheduler_v.state_dict()}, save_path)
 
 
-    def load_model(self, ckpt_path, only_weight=False):
+    def load_model(self, ckpt_path, only_weight=False, to_device="cuda:0"):
         ckpt = torch.load(ckpt_path)
         self.net.load_state_dict(ckpt['model'])
         if not only_weight:
@@ -487,7 +468,26 @@ class Trainer():
     
     def load_examples(self, example_path):
         return np.load(example_path, allow_pickle=True)
-        
+    
+    
+    def get_self_examples(self):
+        newest_data_path = os.path.join(self.data_dir, "self_data.npy")   # New data from player.
+        old_data_path = os.path.join(self.data_dir, "self_data_old.npy")
+        if os.path.exists(newest_data_path):
+            ct = 0
+            while True:
+                if ct > 10000000:
+                    raise Exception
+                try:
+                    self_examples = self.load_examples(newest_data_path)
+                    os.system("mv %s %s" % (newest_data_path, old_data_path))
+                    return self_examples
+                except:
+                    ct += 1
+                    continue
+        return None
+            
+          
             
 if __name__ == '__main__':
     
