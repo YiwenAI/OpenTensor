@@ -60,7 +60,6 @@ class Node():
     def expand(self,
                net: Net,
                noise=False,
-               noise_depth=3,
                network_output=None,
                R_limit=12):
         '''
@@ -108,8 +107,8 @@ class Node():
             value, policy = network_output
         
         # 2.3. Add noise for root node's expand.
-        if self.depth < noise_depth and noise:
-            noise_actions = [canonicalize_action(random_action()) for _ in range(len(policy) // 2)]
+        if noise:
+            noise_actions = [canonicalize_action(random_action()) for _ in range(len(policy) // 4)]
             policy = policy + noise_actions
         
         # 3. Get empirical policy probability.
@@ -148,7 +147,7 @@ class Node():
                               parent=self,
                               pre_action=action,
                               pre_action_idx=idx,
-                              is_terminal=is_zero_tensor(child_state) or child_depth >= R_limit)
+                              is_terminal=(is_zero_tensor(child_state) or child_depth >= R_limit))
             self.children.append(child_node)
             
         # 6. Backward propagate.

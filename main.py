@@ -30,15 +30,18 @@ if __name__ == '__main__':
                       all_kwargs=kwargs)
     
 
-    # trainer.learn(resume="./exp/first_exp/1681827145/ckpt/it0750000.pth",
-    #               example_path="./data/100000_T5_scalar3.npy",
-    #               only_weight=True)
     # trainer.learn(resume=None,
-    #               example_path="./data/traj_data/100000_S4T7_scalar3.npy",
-    #               self_example_path=None,
+    #               example_path="./data/traj_data/100000_S4T7_scalar3_filtered.npy",
+    #               self_example_path=None)
+    
+    # trainer.generate_synthetic_examples(samples_n=100000,
+    #                                     save_path="./data/traj_data/100000_S4T7_scalar3_filtered.npy")
+    # trainer.learn(resume="./exp/S4T7_selfplay/1685326378/ckpt/latest.pth",
+    #               example_path="./data/traj_data/100000_S4T7_scalar3_filtered.npy",
+    #               self_example_path="./exp/S4T7_selfplay/1685326378/data/total_self_data.npy",
     #               self_play=True)
     # while True:
-    #     trainer.infer(resume="./exp/S4T7_selfplay/1684844835/ckpt/it0775000.pth",
+    #     trainer.infer(resume="./exp/S4T7_exp4/1685438936/ckpt/latest.pth",
     #                 mcts_samples_n=32,
     #                 mcts_simu_times=65536,
     #                 vis=False,
@@ -58,13 +61,20 @@ if __name__ == '__main__':
     #                 ]),
     #                 no_base_change=False)  
     
+    # trainer.filter_train_data(n=100,
+    #                           resume="./exp/S4T7_exp3/1684058680/ckpt/it2250000.pth",
+    #                           example_path="./data/traj_data/10000_S4T7_scalar3.npy",
+    #                           mcts_samples_n=32,
+    #                           mcts_simu_times=4096)
+    
     self_play_net = Net(**kwargs["net"])
     player = Player(net=self_play_net,
                     env=env,
                     mcts=mcts,
-                    exp_dir="./exp/S4T7_selfplay/1685088597",
-                    simu_times=400,
+                    exp_dir="./exp/S4T7_selfplay/1685590684",
+                    simu_times=800,
                     play_times=1,
                     num_workers=64,
-                    device="cuda:0")
+                    device="cuda:0",
+                    noise=True)
     player.run()     # Running forever...    

@@ -20,7 +20,8 @@ class Player():
                  simu_times=400,
                  play_times=10,
                  num_workers=256,
-                 device="cuda:1"):
+                 device="cuda:1",
+                 noise=False):
         
         self.net = net
         self.env = env
@@ -35,6 +36,9 @@ class Player():
         self.play_times = play_times
         self.num_workers = num_workers
         self.device = device
+        self.noise = noise
+        
+        self.call_ct = 0
         
 
     def play(self, warm_up=False) -> list:
@@ -46,6 +50,7 @@ class Player():
         num_workers = self.num_workers
         simu_times = self.simu_times
         play_times = self.play_times
+        noise = self.noise
         
         if warm_up:
             simu_times = 40
@@ -93,7 +98,7 @@ class Player():
             
             while True:
                 state_list = envs.get_curstates() 
-                action_list, _, _ = mctsf(state_list, net)                          
+                action_list, _, _ = mctsf(state_list, net, noise=noise)                          
                 envs.step(action_list)
                 terminate_flag = envs.is_all_terminated()
                 mctsf.move(action_list)                                          # Move MCTS forward.    
@@ -139,7 +144,8 @@ class Player():
             np.save(save_path, results)
         print("Avg step is: %f" % avg_steps)
         
-        self.trainer_logger.add_text("Self-play", str(one_traj), global_step=None)
+        self.trainer_logger.add_text("Self-play", str(one_traj), global_step=self.call_ct)
+        self.call_ct += 1
             
         return results, one_traj   
     
@@ -155,4 +161,4 @@ class Player():
     def load_model(self, ckpt_path, only_weight=False, to_device="cuda:0"):
         ckpt = torch.load(ckpt_path)
         self.net.load_state_dict(ckpt['model'])
-        return ckpt['iter']    
+        return ckpt['iter']

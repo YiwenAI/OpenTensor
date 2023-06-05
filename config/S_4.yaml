@@ -30,7 +30,7 @@ trainer:
   v_weight: .9
   save_freq: 25000
   temp_save_freq: 2500
-  self_play_buffer: 100000
+  self_play_buffer: 10000
   self_play_freq: 25
   grad_clip: 4.0
   val_freq: 1000

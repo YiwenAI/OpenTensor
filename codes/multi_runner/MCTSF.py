@@ -14,11 +14,15 @@ class MCTSF():
         self.mcts_list = mcts_list
         self.mcts_n = len(mcts_list)
         self.simulate_times = simulate_times
+        self.R_limit = mcts_list[0].R_limit
         
     
     def __call__(self,
                  state_list,
-                 net: Net):
+                 net: Net,
+                 noise=False):
+        
+        R_limit = self.R_limit
         
         # Check the states.
         for mcts, state in zip(self.mcts_list, state_list):
@@ -52,7 +56,7 @@ class MCTSF():
             
             # Expand...
             for node, value, policy in zip(node_list, batch_value, batch_policy):
-                node.expand(net, network_output=(value, policy))
+                node.expand(net, network_output=(value, policy), R_limit=R_limit, noise=noise)
         
         # Get results.
         actions_list = [mcts.root_node.actions for mcts in self.mcts_list]    

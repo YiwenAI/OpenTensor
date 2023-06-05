@@ -123,26 +123,41 @@ class Trainer():
         total_results = []
         for _ in tqdm(range(samples_n)):
             R = random.randint(1, R_limit)
-            sample = np.zeros((S_size, S_size, S_size), dtype=np.int32)
-            states = []        
-            actions = []
-            rewards = []
-            for r in range(1, (R+1)):
-                ct = 0
-                while True:
-                    u = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
-                    v = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
-                    w = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
-                    ct += 1
-                    if not is_zero_tensor(outer(u, v, w)):
+            for _ in range(10000):
+                sample = np.zeros((S_size, S_size, S_size), dtype=np.int32)
+                states = []        
+                actions = []
+                rewards = []                
+                for r in range(1, (R+1)):
+                    ct = 0
+                    while True:
+                        u = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
+                        v = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
+                        w = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
+                        ct += 1
+                        if not is_zero_tensor(outer(u, v, w)):
+                            break
+                        if ct > 100000:
+                            raise Exception("Oh my god...")
+                    sample = sample + outer(u, v, w)
+                    action = np.stack([u, v, w], axis=0)
+                    actions.append(canonicalize_action(action))
+                    states.append(sample.copy())
+                    rewards.append(-r)
+                
+                # Check redundancy.
+                red_flag = False
+                for (i, j) in [[0,1], [1,2], [2,0]]:
+                    _mat = np.zeros((S_size ** 2, R), dtype=np.int32)
+                    for idx, action in enumerate(actions):
+                        _mat[:, idx] = np.outer(action[i], action[j]).reshape((-1,))
+                    if np.linalg.matrix_rank(_mat) < R:
+                        red_flag = True
                         break
-                    if ct > 100000:
-                        raise Exception("Oh my god...")
-                sample = sample + outer(u, v, w)
-                action = np.stack([u, v, w], axis=0)
-                actions.append(canonicalize_action(action))
-                states.append(sample.copy())
-                rewards.append(-r)
+                
+                if red_flag:
+                    continue
+                break
                 
             # Reformulate the results.
             if save_type == "tuple":
@@ -322,7 +337,7 @@ class Trainer():
                         self.self_examples.extend(self_examples)
                         self.self_examples = self.self_examples[-self_play_buffer:]
                         np.save(os.path.join(self.data_dir, "total_self_data.npy"), np.array(self.self_examples, dtype=object))  # Whole buffer.
-                        synthetic_examples_n = 10000 if i > 50000 else 100000
+                        synthetic_examples_n = 2000 if i > 50000 else 100000
                         dataset = TupleDataset(T=self.T,
                                             S_size=self.S_size,
                                             N_steps=self.net.N_steps,
@@ -383,13 +398,14 @@ class Trainer():
               step_limit=12,
               resume=None,
               vis=False,
-              noise=False):
+              noise=False,
+              log=True):
         
         log_actions = []
         
         assert resume is not None, "No meaning for random init infer."
-        if resume is not None:
-            self.load_model(resume)
+        self.load_model(resume)
+        if log:
             exp_dir = os.path.join(os.path.dirname(resume), '..')
             infer_log_dir = os.path.join(exp_dir, "infer")
             os.makedirs(infer_log_dir, exist_ok=True)
@@ -406,6 +422,7 @@ class Trainer():
         mcts.reset(env.cur_state, simulate_times=mcts_simu_times, R_limit=step_limit)
         env.R_limit = step_limit + 1
         
+        step_ct = 0
         for step in tqdm(range(step_limit)):
             print("Current state is (step%d):" % step)
             print(env.cur_state)
@@ -419,11 +436,13 @@ class Trainer():
             mcts.move(action)                                            # Move MCTS forward.       
             log_actions.append(action)   
             
-            with open(infer_log_f, "a") as f:
-                f.write(log_txt)
-                f.write("\n\n\n")  
-            
+            if log:
+                with open(infer_log_f, "a") as f:
+                    f.write(log_txt)
+                    f.write("\n\n\n")  
+                
             if terminate_flag:
+                step_ct = step + 1
                 print("We get to the end!")
                 break
                 
@@ -434,13 +453,55 @@ class Trainer():
         print("Actions are:")
         print(np.stack(log_actions, axis=0))
         
-        with open(infer_log_f, "a") as f:
-            f.write("\n\n\n") 
-            f.write("\nFinal result:\n")
-            f.write("\n" + str(env.cur_state) + "\n") 
-            f.write("\nActions are:\n")
-            f.write("\n" + str(np.stack(log_actions, axis=0)) + "\n")
-            f.write("\n\n\n")         
+        if log:
+            with open(infer_log_f, "a") as f:
+                f.write("\n\n\n") 
+                f.write("\nFinal result:\n")
+                f.write("\n" + str(env.cur_state) + "\n") 
+                f.write("\nActions are:\n")
+                f.write("\n" + str(np.stack(log_actions, axis=0)) + "\n")
+                f.write("\n\n\n")         
+                f.write("\nStep ct: %d\n" % step_ct)
+                
+        return step_ct
+        
+        
+    def filter_train_data(self,
+                          n=100,
+                          example_path=None,
+                          mcts_simu_times=10000,
+                          mcts_samples_n=16,
+                          step_limit=12,
+                          resume=None):
+        
+        assert resume is not None, "No meaning for random init infer."
+        assert example_path is not None
+        
+        synthetic_examples = self.load_examples(example_path)
+        test_data = random.sample(list(synthetic_examples), n)
+        
+        exp_dir = os.path.join(os.path.dirname(resume), '..')
+        infer_log_dir = os.path.join(exp_dir, "infer")
+        os.makedirs(infer_log_dir, exist_ok=True)
+        infer_log_f = os.path.join(infer_log_dir, str(int(time.time()))+'.txt')        
+        
+        for traj in (test_data):
+            # import pdb; pdb.set_trace()
+            states, _, _ = traj
+            raw_r = len(states)
+            init_state = states[-1]
+            
+            result_r = self.infer(init_state=init_state,
+                                  no_base_change=True,
+                                  mcts_samples_n=mcts_samples_n,
+                                  mcts_simu_times=mcts_simu_times,
+                                  step_limit=step_limit,
+                                  resume=resume,
+                                  log=False)
+            
+            with open(infer_log_f, "a") as f:
+                f.write("%d %d\n" % (raw_r, result_r))
+        
         
     
     def save_model(self, ckpt_name, iter):
