@@ -205,15 +205,13 @@ class MCTS():
     
     def __init__(self,
                  init_state,
-                 simulate_times=400,
-                 R_limit=12,
-                 **kwargs):
+                 kwargs):
         '''
         超参数传递
         '''
         
-        self.simulate_times = simulate_times
-        self.R_limit = R_limit
+        self.simulate_times = kwargs["simulate_times"]
+        self.R_limit = kwargs["R_limit"]
         if init_state is not None:
             self.root_node = Node(state=init_state,
                                   parent=None,

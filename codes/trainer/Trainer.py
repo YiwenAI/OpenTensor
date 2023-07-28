@@ -27,50 +27,40 @@ class Trainer():
     '''
     
     def __init__(self,
-                 net: Net,
-                 env: Environment,
-                 mcts: MCTS,
-                 S_size=4,
-                 T=7,
-                 coefficients=[0, 1, -1],
-                 batch_size=1024,
-                 iters_n=50000,
-                 exp_dir="exp",
-                 exp_name="debug",
-                 device="cuda:0",
-                 self_play_device="cuda:1",
-                 lr=5e-3,
-                 weight_decay=1e-5,
-                 step_size=40000,
-                 gamma=.1,
-                 a_weight=.5,
-                 v_weight=.5,
-                 save_freq=10000,
-                 temp_save_freq=2500,
-                 self_play_freq=10,
-                 self_play_buffer=100000,
-                 grad_clip=4.0,
-                 val_freq=2000,
+                 net: Net,                                
+                 env: Environment,                        
+                 mcts: MCTS,                              
+                 kwargs,
                  all_kwargs=None):
         '''
         初始化一个Trainer.
         包含net, env和MCTS
         '''
+        
+        # 环境、网络和MCTS
         self.env = env
         self.net = net
         self.mcts = mcts
-        self.S_size = S_size
-        self.T = T
-        self.coefficients = coefficients
         
+        # 和问题相关的参数
+        self.S_size = kwargs["S_size"]
+        self.T = kwargs["T"]
+        self.coefficients = kwargs["coefficients"]
+        
+        # 数据集
         self.self_examples = []
         self.synthetic_examples = []
         
+        # 训练相关参数
         self.entropy_loss = torch.nn.CrossEntropyLoss()
         self.quantile_loss = QuantileLoss()
-        self.a_weight = a_weight
-        self.v_weight = v_weight
+        self.a_weight = kwargs["a_weight"]
+        self.v_weight = kwargs["v_weight"] 
         
+        weight_decay = kwargs["weight_decay"]
+        lr = kwargs["lr"]
+        step_size = kwargs["step_size"]
+        gamma = kwargs["gamma"]
         self.optimizer_a = torch.optim.AdamW(net.parameters(),
                                              weight_decay=weight_decay,
                                              lr=lr)
@@ -84,23 +74,26 @@ class Trainer():
                                                            step_size=step_size,
                                                            gamma=gamma)
         
-        self.batch_size = batch_size
-        self.iters_n = iters_n
-        self.grad_clip = grad_clip
-        self.save_freq = save_freq
-        self.temp_save_freq = temp_save_freq
-        self.self_play_freq = self_play_freq
-        self.self_play_buffer = self_play_buffer
-        self.val_freq = val_freq
+        self.batch_size = kwargs["batch_size"]
+        self.iters_n = kwargs["iters_n"]
+        self.grad_clip = kwargs["grad_clip"]
+        self.save_freq = kwargs["save_freq"]
+        self.temp_save_freq = kwargs["temp_save_freq"]
+        self.self_play_freq = kwargs["self_play_freq"]
+        self.self_play_buffer = kwargs["self_play_buffer"]
+        self.val_freq = kwargs["val_freq"]
         
+        # 日志文件相关参数
+        exp_dir, exp_name = kwargs["exp_dir"], kwargs["exp_name"]
         self.exp_dir = exp_dir
         self.save_dir = os.path.join(exp_dir, exp_name, str(int(time.time())))  
         self.log_dir = os.path.join(self.save_dir, "log")
         self.data_dir = os.path.join(self.save_dir, "data")
         
-        self.device = device
-        self.self_play_device = self_play_device
-        self.net.to(device)
+        # 使用的GPU设备
+        self.device = kwargs["device"]
+        self.self_play_device = kwargs["self_play_device"]
+        self.net.to(self.device)
         self.all_kwargs = all_kwargs
     
     

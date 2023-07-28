@@ -21,11 +21,11 @@ if __name__ == '__main__':
         kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
     
     net = Net(**kwargs["net"])
-    mcts = MCTS(**kwargs["mcts"],
+    mcts = MCTS(kwargs=kwargs["mcts"],
                 init_state=None)
-    env = Environment(**kwargs["env"],
+    env = Environment(kwargs=kwargs["env"],
                       init_state=None)
-    trainer = Trainer(**kwargs["trainer"],
+    trainer = Trainer(kwargs=kwargs["trainer"],
                       net=net, env=env, mcts=mcts,
                       all_kwargs=kwargs)
     
@@ -36,10 +36,10 @@ if __name__ == '__main__':
     
     # trainer.generate_synthetic_examples(samples_n=100000,
     #                                     save_path="./data/traj_data/100000_S4T7_scalar3_filtered.npy")
-    # trainer.learn(resume="./exp/S4T7_selfplay/1685326378/ckpt/latest.pth",
-    #               example_path="./data/traj_data/100000_S4T7_scalar3_filtered.npy",
-    #               self_example_path="./exp/S4T7_selfplay/1685326378/data/total_self_data.npy",
-    #               self_play=True)
+    trainer.learn(resume="./exp/S4T7_selfplay/1685326378/ckpt/latest.pth",
+                  example_path="./data/traj_data/100000_S4T7_scalar3_filtered.npy",
+                  self_example_path="./exp/S4T7_selfplay/1685326378/data/total_self_data.npy",
+                  self_play=True)
     # while True:
     #     trainer.infer(resume="./exp/S4T7_exp4/1685438936/ckpt/latest.pth",
     #                 mcts_samples_n=32,

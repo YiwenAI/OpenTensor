@@ -24,22 +24,19 @@ class Environment():
     '''
 
     def __init__(self,
-                 S_size,
-                 R_limit,
-                 init_state=None,
-                 T=7,
-                 **kwargs):
+                 kwargs,
+                 init_state=None):
         '''
         S_size: u, v, w的维度
         R_limit: 游戏的步数上限
         '''
-        # 参数
-        self.S_size = S_size
-        self.R_limit = R_limit
-        self.T = T
+        # 问题相关参数
+        self.S_size = kwargs["S_size"]
+        self.R_limit = kwargs["R_limit"]
+        self.T = kwargs["T"]
         # 环境变量
         if init_state is None:
-            init_state = self.get_init_state(S_size)
+            init_state = self.get_init_state(self.S_size)
         self.cur_state = init_state
         self.accumulate_reward = 0
         self.step_ct = 0
