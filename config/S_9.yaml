@@ -1,0 +1,64 @@
+# base:
+#   S_size: 4
+#   T: 5
+#   coefficients: 
+#     - 0
+#     - 1
+#     - -1
+#   exp_dir: "exp"
+#   exp_name: "debug"
+#   device: "cuda"
+
+trainer:
+  T: 7
+  S_size: 9
+  coefficients: 
+    - 0
+    - 1
+    - -1  
+  exp_dir: "exp"
+  exp_name: "first_exp"
+  device: "cuda"  
+
+  lr: 0.0001
+  weight_decay: 0.00001
+  gamma: .1
+  step_size: 10000000
+  iters_n: 3000000
+  batch_size: 2048
+  a_weight: .5
+  v_weight: .5
+  save_freq: 50000
+  self_play_buffer: 100000
+  self_play_freq: 10
+  grad_clip: 4.0
+  val_freq: 1000
+
+net:
+  T: 7
+  S_size: 9
+  coefficients: 
+    - 0
+    - 1
+    - -1
+  device: 'cuda'
+
+  N_steps: 12
+  N_samples: 32
+  n_attentive: 4
+  N_heads: 16
+  N_features: 32
+  channel: 3
+  scalar_size: 3
+  policy_layers: 2
+  value_layers: 3
+  inter_channel: 256
+  out_channel: 8
+
+mcts:
+  simulate_times: 400
+
+env:
+  R_limit: 30
+  T: 7
+  S_size: 9

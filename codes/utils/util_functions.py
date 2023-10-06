@@ -1,0 +1,102 @@
+import numpy as np
+import torch
+
+'''
+Note that:
+    All function use np as input and output. (Except one_hot)
+'''
+
+def numpy_cvt(a):
+    if torch.is_tensor(a):
+        return a.numpy()
+    return a
+
+def outer(x, y, z):
+    # 得到三维张量，三维分别表示xyz
+    return np.einsum('i,j,k->ijk', x, y, z, dtype=np.int32, casting="same_kind")
+
+def action2tensor(action):
+    u, v, w = action
+    return np.einsum('i,j,k->ijk', u, v, w, dtype=np.int32, casting="same_kind")
+
+def is_zero_tensor(tensor):
+    return np.all(tensor == 0)
+
+def is_equal(a, b):
+    assert a.shape == b.shape
+    return np.all((a - b) == 0)
+
+
+def canonicalize_action(action):
+    u, v, w = action
+    flag_u, flag_v = 1, 1
+    for e in u:
+        if e != 0:
+            flag_u = ((e > 0) * 2 - 1)
+            u = (u * flag_u).astype(np.int32)
+            break
+    for e in v:
+        if e != 0:
+            flag_v = ((e > 0) * 2 - 1)
+            v = (v * flag_v).astype(np.int32)
+            break
+    w = (w * flag_v * flag_u).astype(np.int32)
+    return np.stack([u, v, w])
+
+
+def one_hot(a_s, num_classes, shift=False):
+    '''
+    Note: We return a size of num_classes+1 array.
+    '''
+    if len(a_s.shape) == 1:
+        result = torch.zeros((a_s.shape[0], num_classes+1)).long()
+        for idx, a in enumerate(a_s):
+            if a == -2:
+                continue
+            result[idx, a] = 1
+        if shift:       # Append SOS.
+            result = torch.cat([torch.zeros((1, num_classes+1)).long(), result], dim=0)
+            result[0, -1] = 1
+        return result
+    elif len(a_s.shape) == 2:
+        result = torch.zeros((a_s.shape[0], a_s.shape[1], num_classes+1)).long()
+        for batch, a_batch in enumerate(a_s):
+            for idx, a in enumerate(a_batch):
+                if a == -2:
+                    continue
+                result[batch, idx, a] = 1
+        if shift:       # Append SOS.
+            result = torch.cat([torch.zeros((a_s.shape[0], 1, num_classes+1)).long(), result], dim=1)
+            result[:, 0, -1] = 1                
+        return result
+
+
+def change_basis_tensor(tensor,
+                        trans_mat):
+    return np.einsum('ij, kl, mn, jln -> ikm',
+                     trans_mat, trans_mat, trans_mat, tensor, casting="same_kind", dtype=np.int32)
+
+
+def random_action(coefficients=[0,1,-1],
+                  prob=[.8,.1,.1],
+                  S_size=4):
+    ct = 0
+    while True:
+        u = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
+        v = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
+        w = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
+        ct += 1
+        if not is_zero_tensor(outer(u, v, w)):
+            break
+        if ct > 100000:
+            raise Exception("Oh my god...")    
+    return np.stack([u, v, w], axis=0)
+
+
+def terminate_rank_approx(tensor):
+    assert len(tensor.shape) == 3
+    rank_approx = 0
+    for z_idx in range(tensor.shape[-1]):
+        rank_approx += np.linalg.matrix_rank(np.mat(tensor[..., z_idx], dtype=np.int32))
+    
+    return rank_approx
