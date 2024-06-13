@@ -1,0 +1,50 @@
+base: &base
+  S_size: 4
+  T: 7
+  coefficients: 
+    - 0
+    - 1
+    - -1
+  exp_dir: "exp"
+  exp_name: "S4T7_selfplay"
+  device: "cuda:0"
+  self_play_device: "cuda:1"
+
+trainer:
+  <<: *base
+  lr: 0.0001
+  weight_decay: 0.00001
+  gamma: .1
+  step_size: 10000000
+  iters_n: 3000000
+  batch_size: 1024
+  a_weight: .1
+  v_weight: .9
+  save_freq: 25000
+  temp_save_freq: 2500
+  self_play_buffer: 10000
+  self_play_freq: 25
+  grad_clip: 4.0
+  val_freq: 1000
+
+net:
+  <<: *base
+  N_steps: 3
+  N_samples: 32
+  n_attentive: 6
+  N_heads: 32
+  N_features: 64
+  channel: 3
+  scalar_size: 3
+  policy_layers: 2
+  value_layers: 3
+  inter_channel: 512
+  out_channel: 8
+
+mcts:
+  <<: *base
+  simulate_times: 400
+
+env:
+  <<: *base
+  R_limit: 8

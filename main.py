@@ -1,22 +1,28 @@
 import yaml
+import argparse
 
 from codes.env import Environment
 from codes.mcts import MCTS
 from codes.net import Net
 from codes.trainer import Trainer, Player
 
+def parse():
+    parser = argparse.ArgumentParser(description="OpenTensor")
+    parser.add_argument('--config', type=str, default="./config/S_4.yaml")
+    parser.add_argument('--mode', type=str, default="train", help="three modes: [generate_data, train, infer]")
+    parser.add_argument('--resume', default=None, help="resume ckpt path")
+    parser.add_argument('--run_dir', default="./exp/S4T7_selfplay/1685590684", help="The run dir to infer")
+    args = parser.parse_args()
+    return args
 
-def handle_config():
-    pass
 
-
-# todo: alphastrassen 时间消耗分析
-# todo: 建议写单元测试
-# todo: 有无高效mcts代码 如何进行分布式设计   AlphaZero MPI
 if __name__ == '__main__':
     
-    # conf_path = "./config/my_conf.yaml"
-    conf_path = "./config/S_4.yaml"
+    args = parse()
+    conf_path = args.config
+    mode = args.mode
+    resume = args.resume
+    
     with open(conf_path, 'r', encoding="utf-8") as f:
         kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
     
@@ -29,52 +35,26 @@ if __name__ == '__main__':
                       net=net, env=env, mcts=mcts,
                       all_kwargs=kwargs)
     
+    S_size = kwargs["env"]["S_size"]
+    T = kwargs["env"]["T"]    
+    if mode == "generate_data":
+        trainer.generate_synthetic_examples(samples_n=100000,
+                                            save_path="./data/100000_S%dT%d_scalar3_filtered.npy" % (S_size, T))
 
-    # trainer.learn(resume=None,
-    #               example_path="./data/traj_data/100000_S4T7_scalar3_filtered.npy",
-    #               self_example_path=None)
-    
-    # trainer.generate_synthetic_examples(samples_n=100000,
-    #                                     save_path="./data/traj_data/100000_S4T7_scalar3_filtered.npy")
-    # trainer.learn(resume="./exp/S4T7_selfplay/1685326378/ckpt/latest.pth",
-    #               example_path="./data/traj_data/100000_S4T7_scalar3_filtered.npy",
-    #               self_example_path="./exp/S4T7_selfplay/1685326378/data/total_self_data.npy",
-    #               self_play=True)
-    # while True:
-    #     trainer.infer(resume="./exp/S4T7_exp4/1685438936/ckpt/latest.pth",
-    #                 mcts_samples_n=32,
-    #                 mcts_simu_times=65536,
-    #                 vis=False,
-    #                 noise=False)
+    elif mode == "train":
+        trainer.learn(resume=resume,
+                      example_path="./data/100000_S%dT%d_scalar3_filtered.npy" % (S_size, T),
+                      self_example_path=None)    
         
-    # import numpy as np
-    # while True:
-    #     trainer.infer(resume="./exp/S4T7_exp3/1683894384/ckpt/it2200000.pth",
-    #                 mcts_samples_n=32,
-    #                 mcts_simu_times=65536 * 2,
-    #                 vis=False,
-    #                 init_state=np.array([
-    #                     [[0,0,0,-1], [0,1,0,0], [0,0,0,0], [-1,0,0,-1]],
-    #                     [[0,0,0,0], [0,0,0,0], [1,0,0,0], [0,1,0,0]],
-    #                     [[0,0,1,0], [0,0,0,1], [0,0,0,0], [0,0,0,0]],
-    #                     [[-1,0,0,-1], [0,0,0,0], [0,0,1,0], [-1,0,0,0]]
-    #                 ]),
-    #                 no_base_change=False)  
-    
-    # trainer.filter_train_data(n=100,
-    #                           resume="./exp/S4T7_exp3/1684058680/ckpt/it2250000.pth",
-    #                           example_path="./data/traj_data/10000_S4T7_scalar3.npy",
-    #                           mcts_samples_n=32,
-    #                           mcts_simu_times=4096)
-    
-    self_play_net = Net(**kwargs["net"])
-    player = Player(net=self_play_net,
-                    env=env,
-                    mcts=mcts,
-                    exp_dir="./exp/S4T7_selfplay/1685590684",
-                    simu_times=800,
-                    play_times=1,
-                    num_workers=64,
-                    device="cuda:0",
-                    noise=True)
-    player.run()     # Running forever...    
+    elif mode == "infer":
+        self_play_net = Net(**kwargs["net"])
+        player = Player(net=self_play_net,
+                        env=env,
+                        mcts=mcts,
+                        exp_dir=args.run_dir,
+                        simu_times=800,
+                        play_times=1,
+                        num_workers=64,
+                        device="cuda:0",
+                        noise=True)
+        player.run()     # Running forever...                
