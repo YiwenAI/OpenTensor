@@ -15,7 +15,7 @@ mkdir data
 python main.py --config ./config/S_4.yaml --mode generate_data
 ```
 
-This command generates 100000 symthetic tensors and saves it to the `./data` folder.
+This command generates 100000 synthetic tensors and saves it to the `./data` folder.
 
 ## Training OpenTensor
 
