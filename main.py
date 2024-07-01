@@ -25,11 +25,6 @@ if __name__ == '__main__':
     mode = args.mode
     resume = args.resume
     
-    args = parse()
-    conf_path = args.config
-    mode = args.mode
-    resume = args.resume
-    
     with open(conf_path, 'r', encoding="utf-8") as f:
         kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
     
