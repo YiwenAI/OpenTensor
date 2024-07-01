@@ -53,7 +53,7 @@ class Trainer():
         
         # 训练相关参数
         self.entropy_loss = torch.nn.CrossEntropyLoss()
-        self.quantile_loss = QuantileLoss()
+        self.quantile_loss = QuantileLoss(device=kwargs["device"])
         self.a_weight = kwargs["a_weight"]
         self.v_weight = kwargs["v_weight"] 
         
