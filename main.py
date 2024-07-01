@@ -1,5 +1,6 @@
 import yaml
 import argparse
+import argparse
 
 from codes.env import Environment
 from codes.mcts import MCTS
@@ -18,6 +19,11 @@ def parse():
 
 
 if __name__ == '__main__':
+    
+    args = parse()
+    conf_path = args.config
+    mode = args.mode
+    resume = args.resume
     
     args = parse()
     conf_path = args.config
