@@ -33,3 +33,17 @@ python main.py --config ./config/S_4.yaml --mode infer --run_dir $run_dir
 ```
 
 where `$run_dir` is the subfolders of `./exp`, which contains the model parameters of OpenTensor. This command discovers descomposition of the matrix multiplication tensor with the OpenTensor model.
+
+
+## Citing us
+
+If our work has been helpful to you, please feel free to cite us:
+
+```latex
+@article{sun2024opentensor,
+  title={OpenTensor: Reproducing Faster Matrix Multiplication Discovering Algorithms},
+  author={Sun, Yiwen and Li, Wenye},
+  journal={arXiv preprint arXiv:2405.20748},
+  year={2024}
+}
+```
