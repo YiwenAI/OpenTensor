@@ -10,7 +10,7 @@
 #   device: "cuda"
 
 trainer:
-  T: 7
+  T: 3
   S_size: 4
   coefficients: 
     - 0
@@ -23,20 +23,20 @@ trainer:
   lr: 0.0001
   weight_decay: 0.00001
   gamma: .1
-  step_size: 10000000
-  iters_n: 3000000
-  batch_size: 1024
+  step_size: 256
+  iters_n: 12500
+  batch_size: 16
   a_weight: .1
   v_weight: .9
-  save_freq: 25000
-  temp_save_freq: 2500
-  self_play_buffer: 10000
-  self_play_freq: 25
+  save_freq: 1250
+  temp_save_freq: 625
+  self_play_buffer: 1250
+  self_play_freq: 10
   grad_clip: 4.0
-  val_freq: 1000
+  val_freq: 250
 
 net:
-  T: 7
+  T: 3
   S_size: 4
   coefficients: 
     - 0
@@ -47,8 +47,8 @@ net:
   N_steps: 3
   N_samples: 32
   n_attentive: 6
-  N_heads: 32
-  N_features: 64
+  N_heads: 8
+  N_features: 32
   channel: 3
   scalar_size: 3
   policy_layers: 2
@@ -57,7 +57,7 @@ net:
   out_channel: 8
 
 mcts:
-  simulate_times: 400
+  simulate_times: 20
   R_limit: 8
 
 env:

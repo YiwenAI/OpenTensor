@@ -186,32 +186,29 @@ class Trainer():
         return total_results
         
     
-    def learn_one_batch(self,
-                        batch_example) -> torch.autograd.Variable:
-        '''
-        对一个元组进行学习
-        '''
-        
-        # Groundtruth.
-        s, a_gt, v_gt = batch_example     # s: [tensor, scalar]
+    def learn_one_batch(self, batch_example):
+        s, a_gt, v_gt = batch_example  # s: [tensor, scalar]
+
+        # ✅ NEW: 把 s 的两个元素也搬到 GPU
+        s_tensor, s_scalar = s
+        s_tensor = s_tensor.to(self.device)
+        s_scalar = s_scalar.to(self.device)
+
         a_gt = a_gt.long().to(self.device)
         v_gt = v_gt.float().to(self.device)
-        
-        # Network infer.
-        self.net.set_mode("train")
-        output = self.net([*s, a_gt])
-        o, q = output                   # o: [batch_size, N_steps, N_logits], q: [batch_size, N_quantiles]
-        
-        # Losses.
-        v_loss = self.quantile_loss(q, v_gt)    # v_gt: [batch_size,]
-        o = o.transpose(1,2)                    # o: [batch_size, N_logits, N_steps]
-        a_loss = self.entropy_loss(o, a_gt)     # a_gt: [batch_size, N_steps], o: [batch_size, N_logits, N_steps]
-        loss = self.v_weight * v_loss + self.a_weight * a_loss
-        
-        del a_gt, v_gt
 
+        self.net.set_mode("train")
+        output = self.net([s_tensor, s_scalar, a_gt])
+        o, q = output
+        
+        v_loss = self.quantile_loss(q, v_gt)
+        o = o.transpose(1,2)
+        a_loss = self.entropy_loss(o, a_gt)
+        loss = self.v_weight * v_loss + self.a_weight * a_loss
+
+        del a_gt, v_gt
         return loss, v_loss, a_loss
-    
+
     
     def val_one_episode(self,
                         episode):
@@ -359,7 +356,7 @@ class Trainer():
             optimizer_v.zero_grad()
             loss, v_loss, a_loss = self.learn_one_batch(batch_example)
             loss.backward()
-            torch.nn.utils.clip_grad_norm(self.net.parameters(),
+            torch.nn.utils.clip_grad_norm_(self.net.parameters(),
                                           max_norm=self.grad_clip)
             optimizer_a.step()
             optimizer_v.step()

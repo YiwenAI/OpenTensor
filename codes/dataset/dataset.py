@@ -124,7 +124,7 @@ class TupleDataset(Dataset):
             tensors[0] = state            # state.
             if idx != 0:
                 # History actions.
-                tensors[1:(idx+1)] = np.stack(reversed(actions_tensor[max(idx-(T-1), 0):idx]), axis=0)        
+                tensors[1:(idx+1)] = np.stack(list(reversed(actions_tensor[max(idx-(T-1), 0):idx])), axis=0)        
             scalars = np.array([idx, idx, idx])     #FIXME: Havn't decided the scalars.
             
             cur_state = [tensors, scalars]
