@@ -390,7 +390,7 @@ class Trainer():
     def infer(self,
               init_state=None,
               no_base_change=True,
-              mcts_simu_times=10000,
+              mcts_simu_times=1000,
               mcts_samples_n=16,
               step_limit=12,
               resume=None,

@@ -92,6 +92,6 @@ def terminate_rank_approx(tensor):
     assert len(tensor.shape) == 3
     rank_approx = 0
     for z_idx in range(tensor.shape[-1]):
-        rank_approx += np.linalg.matrix_rank(np.mat(tensor[..., z_idx], dtype=np.int32))
+       rank_approx += np.linalg.matrix_rank(np.asmatrix(tensor[..., z_idx], dtype=np.int32))
     
     return rank_approx
