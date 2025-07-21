@@ -425,13 +425,12 @@ class ValueHead(nn.Module):
         
         assert mode in ["train", "infer"]
         self.mode = mode
-        
+    
 
 class Net(nn.Module):
     '''
-    网络部分
+    Network part
     '''
-    
     def __init__(self,
                  T=7,
                  S_size=4,
@@ -448,24 +447,23 @@ class Net(nn.Module):
                  value_layers=3,
                  inter_channel=512,
                  out_channel=8,
+                 use_projection=False,  # === MODIFIED ===
+                 projection_dim=16,     # === MODIFIED ===
                  **kwargs):
         '''
-        初始化部分
+        Initialization section
         '''
-        
         super(Net, self).__init__()
-        # Parameters.
         self.T = T
         self.S_size = S_size
         self.N_steps = N_steps
         self.coefficients = coefficients
         token_len = 3 * S_size // N_steps
-        N_logits = len(coefficients) ** token_len   # len(F) ^ len(token)
+        N_logits = len(coefficients) ** token_len
         self.N_logits = N_logits
         self.token_len = token_len
         self.N_samples = N_samples
-        
-        # Network.
+
         self.torso = Torso(S_size=S_size, T=T,
                            n_attentive=n_attentive,
                            device=device,
@@ -484,101 +482,90 @@ class Net(nn.Module):
                                     inter_channel=inter_channel,
                                     out_channel=out_channel)
         self.mode = "train"
-        
-    
+
+        # projection 
+        self.use_projection = use_projection
+        self.projection_dim = projection_dim
+        self.device = device
+
+        if self.use_projection:
+            in_dim = 3 * S_size**2  # e: [B, 3*S_size^2, channel]
+            out_dim = projection_dim
+            self.P = nn.Parameter(torch.randn(in_dim, out_dim))
+            self.Q = nn.Parameter(torch.randn(in_dim, out_dim))
+            nn.init.xavier_uniform_(self.P)
+            nn.init.xavier_uniform_(self.Q)
+
     def forward(self, x):
-        
-        # Input:
-        #   If train mode:
-        #     Tensors of shape of [B,T,S,S,S]. First one is current tensor. (numpy)
-        #     Scalars of shape of [B,s].                                    (numpy)
-        #     (Groundtruth) of shape of [B, N_steps]. 
-        #   Elif infer mode:
-        #     Tensors of shape of [T,S,S,S]
-        #     Scalars of shape of [s,]             
-        
         if self.mode == 'train':
             states, scalars, g = x
             self.policy_head.set_mode("train")
             self.value_head.set_mode("train")
             self.torso.set_mode("train")
-            
-            e = self.torso([states, scalars])
+
+            e = self.torso([states, scalars])  # [B, 3*S**2, c]
+
+            if self.use_projection:
+                # tensor projection
+                B, m, c = e.shape
+                e_proj = torch.einsum('bmc,mk->bkc', e, self.P)  # [B, k, c]
+                e = e_proj
+
             o, z1 = self.policy_head([e, g])
             q = self.value_head([z1])
-            
-            return o, q          # o: [B, N_steps, N_logits]; q: [B, out_channels]
-        
+
+            return o, q
+
         elif self.mode == 'infer':
             states, scalars = x
             self.policy_head.set_mode("infer")
             self.value_head.set_mode("infer")
             self.torso.set_mode("infer")
-            
-            e = self.torso([states, scalars])
+
+            e = self.torso([states, scalars])  # [B, 3*S**2, c]
+
+            if self.use_projection:
+                B, m, c = e.shape
+                e_proj = torch.einsum('bmc,mk->bkc', e, self.P)  # [B, k, c]
+                e = e_proj
+
             a, p, z1 = self.policy_head([e])
             q = self.value_head([z1])
-            
-            return a, p, q        #FIXME: Neet to process q.
-                                  # a: {0,1,..., N_logits-1} ^ [B, N_samples, N_steps]; p: [B, N_samples,]; q: [B, out_channels,]
-        
-    
+
+            return a, p, q
+
     def set_mode(self, mode):
-        
         assert mode in ["train", "infer"]
         self.mode = mode
-        
-    
-    def set_samples_n(self,
-                      N_samples):
-        self.N_samples = N_samples    
+
+    def set_samples_n(self, N_samples):
+        self.N_samples = N_samples
         self.policy_head.set_samples_n(N_samples)
-        
-    
+
     def logits_to_action(self, logits):
-        '''
-        logit: N_steps values of {0, 1, ..., N_logits - 1}.
-        e.g.: 
-            If:
-                token_len = 2
-                coefficients = [0, 1, -1]
-                N_steps = 6 
-            Then:    
-                [0, 1, 2, 3, 4, 5] -> [0 0 | 0 1 | 0 -1 | 1 0 | 1 1 | 1 -1 ]
-        '''
         token_len = self.token_len
         coefficients = self.coefficients
         action = []
-        for logit in logits:                       # Get one action
+        for logit in logits:
             token = []
             if logit == self.N_logits:
-                raise 
-            for _ in range(token_len):             # Get one token
+                raise
+            for _ in range(token_len):
                 idx = logit % len(coefficients)
                 token.append(coefficients[idx])
                 logit = logit // len(coefficients)
             token.reverse()
             action.extend(token)
-        
+
         action = np.array(action, dtype=np.int32).reshape((3, -1))
         return action
-        
-        
-    def action_to_logits(self,
-                         action):
-        '''
-        action: A [3, S_size] array.
-        '''
-        
-        # Break action into tokens.
+
+    def action_to_logits(self, action):
         token_len = self.token_len
         coefficients = self.coefficients
-        action = action.reshape((-1, token_len))     # [N_steps, token_len]
-        
-        # Get logits.
+        action = action.reshape((-1, token_len))
         logits = []
-        for token in action:         # Get one logit.
-            # token = token.to_list()
+        for token in action:
             logit = 0
             if torch.is_tensor(token):
                 token = torch.flip(token, dims=(0,))
@@ -587,33 +574,21 @@ class Net(nn.Module):
             for idx, v in enumerate(token):
                 logit += coefficients.index(v) * (len(coefficients) ** idx)
             logits.append(logit)
-            
+
         return np.array(logits)
-        
-        
+
     def value(self, output, u_q=.75):
-        '''
-        根据网络的输出, 得到效用值
-        output: output = net(x)
-        '''
         q = output[-1]
         q = q.detach().cpu().numpy()
         batch_size, out_channels = q.shape[0], q.shape[1]
-        
         j = math.ceil(u_q * out_channels)
         return q, q[:, (j-1):].mean(axis=1)
-    
-    
-    def policy(self, output):
-        '''
-        根据网络的输出, 得到采样的策略
-        output: output = net(x)
-        '''
-        assert len(output) == 3, "We need the output from infer mode."
 
+    def policy(self, output):
+        assert len(output) == 3, "We need the output from infer mode."
         a, p, _ = output
         a, p = a.detach().cpu().numpy(), p.detach().cpu().numpy()
-        
+
         batch_actions = []
         for batch in a:
             actions = []
@@ -622,44 +597,4 @@ class Net(nn.Module):
             actions = np.stack(actions, axis=0)
             batch_actions.append(actions)
         batch_actions = np.stack(batch_actions, axis=0)
-        
         return batch_actions, p
-        
-    
-    
-if __name__ == '__main__':
-    # torso = Torso().to('cuda')
-    # test_input = [np.random.randint(-1, 1, (64, 7, 4, 4, 4)), np.random.randint(-1, 1, (64, 3))]
-    # e = torso(test_input)
-    # import pdb; pdb.set_trace()
-    
-    # policy_head = PolicyHead().to('cuda')
-    # test_g = torch.tensor([0,1,2,3,4,5]).repeat(64).reshape(64, 6).to('cuda')
-    # train_output = policy_head([e, test_g])
-    # import pdb; pdb.set_trace()
-    
-    # value_head = ValueHead().to('cuda')
-    # value_output = value_head([train_output[1]])
-    # import pdb; pdb.set_trace()
-    
-    # net = Net().to('cuda')
-    # test_tensor, test_scalar = np.random.randint(-1, 1, (7, 4, 4, 4)), np.random.randint(-1, 1, (3))
-    # test_input = [test_tensor[None], test_scalar[None]]
-    # test_g = torch.tensor([-1,0,1,2,3,4,5]).repeat(1).reshape(1, 7).to('cuda')
-    # train_output = net([*test_input, test_g])  
-    # # import pdb; pdb.set_trace()
-    
-    # net.set_mode("infer")
-    # test_input = [test_tensor, test_scalar]
-    # infer_output = net(test_input)
-    # import pdb; pdb.set_trace()
-    
-    # _, value = net.value(infer_output)
-    # policy = net.policy(infer_output)
-    # import pdb; pdb.set_trace()
-    
-    net = Net()
-    logits = np.array([-1,0,1,2,2,1,1])
-    action = net.logits_to_action(logits)
-    logits = net.action_to_logits(action)
-    import pdb; pdb.set_trace()

@@ -18,7 +18,7 @@ trainer:
     - -1  
   exp_dir: "exp"
   exp_name: "S4T7_selfplay"
-  device: "cuda:0"  
+  device: "cuda:0"
   self_play_device: "cuda:1"
   lr: 0.0001
   weight_decay: 0.00001
@@ -55,6 +55,10 @@ net:
   value_layers: 3
   inter_channel: 512
   out_channel: 8
+
+  # === Added for tensor projection ===
+  use_projection: true     # add projection
+  projection_dim: 16       # The projected dimension 
 
 mcts:
   simulate_times: 20

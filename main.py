@@ -25,6 +25,14 @@ if __name__ == '__main__':
     with open(conf_path, 'r', encoding="utf-8") as f:
         kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
 
+    # === Automatically pass projection parameters ===
+    # If projection is written in config, add it to net's kwargs
+    if "projection_dim" in kwargs["net"]:
+        kwargs["net"]["use_projection"] = True  # Forced to open
+    else:
+        kwargs["net"]["use_projection"] = False
+
+    # === Instantiating Net will register the projection ===
     net = Net(**kwargs["net"])
     mcts = MCTS(**kwargs["mcts"], init_state=None)
     env = Environment(**kwargs["env"], init_state=None)
@@ -51,4 +59,3 @@ if __name__ == '__main__':
     elif mode == "infer":
         assert args.run_dir is not None, "Please specify --run_dir to the checkpoint you want to test!"
         trainer.infer(resume=args.run_dir)
-
