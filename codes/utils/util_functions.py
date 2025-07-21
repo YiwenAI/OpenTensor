@@ -12,7 +12,7 @@ def numpy_cvt(a):
     return a
 
 def outer(x, y, z):
-    # 得到三维张量，三维分别表示xyz
+    # Get a three-dimensional tensor, the three dimensions represent xyz
     return np.einsum('i,j,k->ijk', x, y, z, dtype=np.int32, casting="same_kind")
 
 def action2tensor(action):

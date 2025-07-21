@@ -23,7 +23,7 @@ from codes.multi_runner import *
 
 class Trainer():
     '''
-    用于训练网络
+    For training the network
     '''
     
     def __init__(self,
@@ -53,8 +53,8 @@ class Trainer():
                  val_freq=2000,
                  all_kwargs=None):
         '''
-        初始化一个Trainer.
-        包含net, env和MCTS
+        Initialize a Trainer.
+        Contains net, env and MCTS
         '''
         self.env = env
         self.net = net
@@ -111,8 +111,8 @@ class Trainer():
                                     save_path=None,
                                     save_type="traj") -> list:
         '''
-        生成人工合成的Tensor examples
-        返回: results
+        Generate artificially synthesized Tensor examples
+        Return: results
         '''
         assert save_type in ["traj", "tuple"]
         
@@ -189,7 +189,7 @@ class Trainer():
     def learn_one_batch(self, batch_example):
         s, a_gt, v_gt = batch_example  # s: [tensor, scalar]
 
-        # ✅ NEW: 把 s 的两个元素也搬到 GPU
+        # Move the two elements of s to the GPU as well
         s_tensor, s_scalar = s
         s_tensor = s_tensor.to(self.device)
         s_scalar = s_scalar.to(self.device)
@@ -213,7 +213,7 @@ class Trainer():
     def val_one_episode(self,
                         episode):
         '''
-        对一个元组进行验证, 打印输出
+        Verify a tuple and print it out
         '''
         
         state, action, reward = episode
@@ -261,7 +261,7 @@ class Trainer():
               save_type="traj",
               self_play=False):
         '''
-        训练的主函数
+        The main function of training
         '''
         optimizer_a = self.optimizer_a
         scheduler_a = self.scheduler_a
@@ -350,8 +350,8 @@ class Trainer():
                 print("Epoch: %d finish." % epoch_ct)
                 epoch_ct += 1
 
-            # 此处进行多进程优化
-            # todo: 什么时候更新网络参数                     
+            # Multi-process optimization is performed here
+            # todo: When to update network parameters                     
             optimizer_a.zero_grad()
             optimizer_v.zero_grad()
             loss, v_loss, a_loss = self.learn_one_batch(batch_example)
@@ -363,7 +363,7 @@ class Trainer():
             scheduler_a.step()
             scheduler_v.step()
             
-            # 添加logger部分
+            # Add the logger section
             if i % 20 == 0:
                 # print("Loss: %f, v_loss: %f, a_loss: %f" %
                 #       (loss.detach().cpu().item(), v_loss.detach().cpu().item(), a_loss.detach().cpu().item()))
